@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate version tag and source of truth
+        run: |
+          python - <<'PY'
+import json, os, re, sys
+from pathlib import Path
+
+root = Path('.')
+version_file = root / 'version.json'
+with version_file.open('r', encoding='utf-8') as fh:
+    data = json.load(fh)
+version = data.get('version')
+if not re.fullmatch(r'\d+\.\d+\.\d+', str(version)):
+    raise SystemExit(f'Invalid version in version.json: {version!r}')
+ref = os.environ.get('GITHUB_REF_NAME', '')
+if ref:
+    tag_version = ref[1:] if ref.startswith('v') else ref
+    if tag_version != version:
+        raise SystemExit(f'Tag version {tag_version} does not match version.json {version}')
+print(f'Validated version: {version}')
+PY
+
+      - name: Ensure changelog entry exists
+        run: |
+          test -f CHANGELOG.md
+          grep -q "## \[${GITHUB_REF_NAME#v}\]" CHANGELOG.md || echo "Warning: changelog entry for ${GITHUB_REF_NAME#v} not found; please update before release."
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release summary
+        run: |
+          echo "Release published for ${GITHUB_REF_NAME}"
+          echo "Use the release asset metadata and checksum validation before distribution."
