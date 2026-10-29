@@ -1,0 +1,88 @@
+<Window x:Class="EMailMPC.Desktop.ComposeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Compose email"
+        Width="760"
+        Height="650"
+        MinWidth="620"
+        MinHeight="520"
+        WindowStartupLocation="CenterOwner"
+        Background="#F4F6F8"
+        Closing="Window_Closing">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,16">
+            <TextBlock Text="New message"
+                       FontSize="24"
+                       FontWeight="SemiBold"
+                       Foreground="#17212B" />
+            <TextBlock x:Name="FromText"
+                       Margin="0,6,0,0"
+                       Foreground="#536270" />
+        </StackPanel>
+
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="90" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="To" VerticalAlignment="Center" />
+                <TextBox x:Name="RecipientsBox"
+                         Grid.Column="1"
+                         Padding="8"
+                         MaxLength="4096"
+                         AutomationProperties.Name="Message recipients" />
+            </Grid>
+            <Grid Grid.Row="1" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="90" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Subject" VerticalAlignment="Center" />
+                <TextBox x:Name="SubjectBox"
+                         Grid.Column="1"
+                         Padding="8"
+                         MaxLength="998"
+                         AutomationProperties.Name="Message subject" />
+            </Grid>
+            <TextBox x:Name="BodyBox"
+                     Grid.Row="2"
+                     Padding="10"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"
+                     MaxLength="1048576"
+                     AutomationProperties.Name="Message body" />
+        </Grid>
+
+        <DockPanel Grid.Row="2" Margin="0,16,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="CancelButton"
+                        Margin="0,0,8,0"
+                        Padding="16,8"
+                        Content="Cancel"
+                        Click="CancelButton_Click" />
+                <Button x:Name="SendButton"
+                        Padding="18,8"
+                        Content="Send email"
+                        IsDefault="True"
+                        Click="SendButton_Click" />
+            </StackPanel>
+            <TextBlock x:Name="StatusText"
+                       VerticalAlignment="Center"
+                       Margin="0,0,12,0"
+                       Foreground="#536270"
+                       TextWrapping="Wrap" />
+        </DockPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,121 @@
+<Window x:Class="EMailMPC.Desktop.AccountSetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Add email account"
+        Width="640"
+        Height="690"
+        MinWidth="580"
+        MinHeight="650"
+        ResizeMode="CanResize"
+        WindowStartupLocation="CenterOwner"
+        Background="#F4F6F8"
+        Closing="Window_Closing">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Margin="0,0,0,18">
+            <TextBlock Text="Connect an email account"
+                       FontSize="24"
+                       FontWeight="SemiBold"
+                       Foreground="#17212B" />
+            <TextBlock Margin="0,7,0,0"
+                       Text="Uses IMAP over verified TLS. Enter a provider-issued app password; your normal account password is not recommended."
+                       Foreground="#536270"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <Grid Margin="0,0,10,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="90" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,10"
+                           Text="ACCOUNT"
+                           FontWeight="SemiBold"
+                           Foreground="#26734D" />
+                <TextBlock Grid.Row="1" Text="Email address" VerticalAlignment="Center" Margin="0,0,8,10" />
+                <TextBox x:Name="EmailBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                         Margin="0,0,0,10" Padding="8" AutomationProperties.Name="Email address" />
+                <TextBlock Grid.Row="2" Text="Display name" VerticalAlignment="Center" Margin="0,0,8,10" />
+                <TextBox x:Name="DisplayNameBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
+                         Margin="0,0,0,10" Padding="8" />
+                <TextBlock Grid.Row="3" Text="App password" VerticalAlignment="Center" Margin="0,0,8,10" />
+                <PasswordBox x:Name="PasswordBox" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2"
+                             Margin="0,0,0,10" Padding="8" AutomationProperties.Name="App password" />
+
+                <TextBlock Grid.Row="4" Grid.ColumnSpan="3" Margin="0,14,0,10"
+                           Text="INCOMING MAIL (IMAP)"
+                           FontWeight="SemiBold"
+                           Foreground="#26734D" />
+                <TextBlock Grid.Row="5" Text="Server" VerticalAlignment="Center" Margin="0,0,8,10" />
+                <TextBox x:Name="ImapHostBox" Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2"
+                         Margin="0,0,0,10" Padding="8" Text="imap.gmail.com" />
+                <TextBlock Grid.Row="6" Text="Port" VerticalAlignment="Center" Margin="0,0,8,10" />
+                <TextBox x:Name="ImapPortBox" Grid.Row="6" Grid.Column="1"
+                         Margin="0,0,8,10" Padding="8" Text="993" />
+                <ComboBox x:Name="ImapSecurityBox" Grid.Row="6" Grid.Column="2" Margin="0,0,0,10"
+                          AutomationProperties.Name="IMAP transport security">
+                    <ComboBoxItem Content="SSL/TLS" Tag="SslOnConnect" IsSelected="True" />
+                    <ComboBoxItem Content="STARTTLS" Tag="StartTls" />
+                </ComboBox>
+
+                <TextBlock Grid.Row="7" Grid.ColumnSpan="3" Margin="0,14,0,10"
+                           Text="OUTGOING MAIL (SMTP)"
+                           FontWeight="SemiBold"
+                           Foreground="#26734D" />
+                <TextBlock Grid.Row="8" Text="Server" VerticalAlignment="Center" Margin="0,0,8,10" />
+                <TextBox x:Name="SmtpHostBox" Grid.Row="8" Grid.Column="1" Grid.ColumnSpan="2"
+                         Margin="0,0,0,10" Padding="8" Text="smtp.gmail.com" />
+                <TextBlock Grid.Row="9" Text="Port" VerticalAlignment="Center" Margin="0,0,8,10" />
+                <TextBox x:Name="SmtpPortBox" Grid.Row="9" Grid.Column="1"
+                         Margin="0,0,8,10" Padding="8" Text="587" />
+                <ComboBox x:Name="SmtpSecurityBox" Grid.Row="9" Grid.Column="2" Margin="0,0,0,10"
+                          AutomationProperties.Name="SMTP transport security">
+                    <ComboBoxItem Content="STARTTLS" Tag="StartTls" IsSelected="True" />
+                    <ComboBoxItem Content="SSL/TLS" Tag="SslOnConnect" />
+                </ComboBox>
+
+                <TextBlock Grid.Row="10" Grid.ColumnSpan="3" Margin="0,14,0,4"
+                           Text="Only IMAP connectivity and folder discovery are tested here. SMTP sending is not yet available."
+                           FontSize="12"
+                           Foreground="#697783"
+                           TextWrapping="Wrap" />
+            </Grid>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="2" Margin="0,18,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="CancelButton" Margin="0,0,8,0" Padding="16,8"
+                        Content="Cancel" Click="CancelButton_Click" />
+                <Button x:Name="ConnectButton" Padding="18,8"
+                        Content="Verify and add" IsDefault="True" Click="ConnectButton_Click" />
+            </StackPanel>
+            <TextBlock x:Name="StatusText"
+                       VerticalAlignment="Center"
+                       Margin="0,0,12,0"
+                       Foreground="#536270"
+                       TextWrapping="Wrap" />
+        </DockPanel>
+    </Grid>
+</Window>
