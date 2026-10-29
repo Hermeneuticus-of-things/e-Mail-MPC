@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/EMailMPC.Core/EMailMPC.Core.csproj" />
+  <Project Path="src/EMailMPC.Desktop/EMailMPC.Desktop.csproj" />
+  <Project Path="tests/EMailMPC.Core.Tests/EMailMPC.Core.Tests.csproj" />
+</Solution>

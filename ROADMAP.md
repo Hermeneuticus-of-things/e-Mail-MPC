@@ -29,10 +29,16 @@ This roadmap defines the product path from foundation to stable release. The seq
 - stabilize the message drafting workflow
 
 ### Deliverables
-- account connection layer for supported protocols
-- mailbox sync engine
-- search index and filtering support
+- IMAP account setup and TLS connection verification
+- bounded read-only manual mailbox sync
+- local search index and account filtering
+- local reading of synchronized text and explicit plain-text SMTP sending
 - message draft creation and persistence
+
+### Current progress
+- Done: IMAP/SMTP setup with app passwords, TLS-only connection options, remote-folder discovery, encrypted local storage, manual sync capped at 200 newest messages per folder, local reading, and explicit plain-text sending.
+- Done: eM Client style query language (keyed operators, phrases, negation, OR groups), switchable relevance (bm25) / date ranking, local natural-language query interpretation, and incremental IMAP sync (UIDVALIDITY + highest-UID tracking with flag refresh and expunge removal).
+- Remaining: provider-specific OAuth, attachment download and compose attachments, folder management, full-history synchronization, complete mailbox import/export, drafts, account removal UI, Sent-folder persistence, and recovery/backup.
 
 ### Exit criteria
 - standard email workflows work reliably end-to-end

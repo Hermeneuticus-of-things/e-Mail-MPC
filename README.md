@@ -23,17 +23,13 @@ This project is intended for:
 - organizations that want shared deployment and secure local storage
 - users who care about privacy and explicit control over their data
 
-## What the app does
+## Product direction
 
-The application is designed to support the core daily email workflow:
-
-- read and organize messages
-- search across inbox and folders
-- compose and send messages
-- manage drafts and replies
-- store email data safely on disk
-- handle updates in a controlled and verifiable way
-- support future mobile and cross-device use cases
+The planned product is a desktop email client for reading, organizing, searching,
+and sending mail. The current build connects to compatible IMAP/SMTP providers
+with app passwords and supports bounded, manual, read-only synchronization,
+local message reading, and explicit plain-text sending. OAuth, full mailbox
+migration, drafts, updates, and mobile support remain roadmap work.
 
 ## How it works
 
@@ -54,25 +50,26 @@ The product architecture is built around a few core principles:
 4. Extensible mailbox backend
    - support for IMAP, Exchange, OAuth, and future providers can be layered into a stable core
 
-## Key features
+## Implemented foundation
 
-- secure local storage for messages and metadata
-- encrypted file format with migration support
-- versioned release flow and update validation
-- shared machine installation support
-- fast inbox search and filtering
-- message composition and drafting workflow
-- future-ready architecture for desktop and mobile clients
-- optional telemetry with explicit opt-in and anonymization
+- Windows .NET 10/WPF application shell
+- SQLCipher-encrypted local database and Windows DPAPI-protected key
+- local full-text search UI and core search filters
+- encrypted account and folder metadata with account-scoped message search
+- versioned migrations that preserve existing mail and rebuild the search index
+- IMAP account setup with explicit SSL/TLS or STARTTLS and provider-issued app passwords
+- IMAP connection verification and remote folder discovery
+- on-demand, read-only indexing of up to the 200 newest messages per folder
+- text-only body retrieval; attachments are not downloaded, and body parts over 2 MiB are skipped
+- local reading of synchronized message text without changing server read state
+- explicit plain-text SMTP sending over certificate-validated SSL/TLS or STARTTLS
+- separate DPAPI-protected account secrets, bound to the current Windows user and account ID
 
-## Example workflow
-
-1. Install the application on the workstation.
-2. Add an email account using a supported protocol.
-3. Read, search, and organize messages in the inbox.
-4. Draft replies or new messages directly in the app.
-5. Keep data protected through local encryption and controlled updates.
-6. Export or save content explicitly when needed.
+OAuth, HTML compose, attachments, drafts, import/export, incremental/full-history
+sync, automatic updates, and telemetry are not implemented. Sent messages are
+not stored in a local Sent folder; check the provider's Sent folder after sending.
+Synchronization is deliberately capped at 200 newest messages in each folder
+per request; it is not a complete mailbox migration or a production sync engine.
 
 ## Roadmap
 
@@ -115,14 +112,23 @@ For the full plan, see [ROADMAP.md](ROADMAP.md).
 
 ## Installation
 
-To install the application, follow the release instructions for your platform and use the official signed release assets published in GitHub Releases.
+There is no installer or production release yet. Build and run the Windows
+development app using the instructions below.
 
-Current release management expectations:
-
-- semantic versioning with tags like `vX.Y.Z`
-- release artifacts tied to signed metadata
-- installation and update flows validated before publishing
-- rollback path preserved when a release fails verification
+To add an account, choose **Add account**, enter the provider's IMAP/SMTP server
+settings and a provider-issued app password, then choose **Verify and add**.
+The app tests IMAP over certificate-validated TLS before saving the account.
+Use **Sync mail** to download the newest messages; IMAP folders are opened
+read-only, and messages on the server are not changed. Gmail app passwords
+require an eligible account with two-step verification enabled. Microsoft 365
+accounts requiring OAuth are not supported by this initial connection flow.
+For generic IMAP accounts, obtain the correct server hostname and app password
+from the provider; the Gmail values shown in the form are only defaults.
+Select a search result to read its locally stored text. Choose a specific
+account and **Compose** to send a plain-text message through its configured
+SMTP endpoint. The app does not create drafts or save a local Sent copy, and a
+connection failure during sending can leave delivery status uncertain; check
+the provider's Sent folder before retrying.
 
 ## Development
 
@@ -133,6 +139,27 @@ This project is designed to support a clear, maintainable engineering process:
 - CI validation for build, metadata, and release consistency
 - automated changelog generation from conventional commits
 - documented release and rollback procedures
+
+### Build the Windows app
+
+Requirements: Windows and the .NET 10 SDK.
+
+```powershell
+dotnet build EMailMPC.slnx
+dotnet test EMailMPC.slnx
+dotnet run --project src/EMailMPC.Desktop/EMailMPC.Desktop.csproj
+```
+
+The application stores its encrypted database and DPAPI-protected account
+secrets in the current user's `%LOCALAPPDATA%\eMail MPC\data` directory.
+Back up any important messages independently; this development build does not
+provide an export, recovery key, or database restore workflow.
+
+The current build initializes an encrypted local database, searches and reads
+locally synchronized mail, and can connect to compatible IMAP/SMTP servers
+using app passwords. It does not perform OAuth, import eM Client data, or modify
+messages on the server. Use a copy/test account until the sync and migration
+limits are acceptable for your needs.
 
 ## Contributing
 
@@ -168,15 +195,25 @@ Before filing a report, include:
 
 ## License
 
-This project is distributed under the terms of the repository license. See [LICENSE](LICENSE) for details.
+No license has been selected yet. No `LICENSE` file is present; do not assume
+the project is licensed for reuse or distribution.
 
 ## Project status
 
-This project is in active product definition and foundation-building stages. The roadmap prioritizes secure storage, install/update reliability, and release integrity before expanding into broader feature sets and multi-platform delivery.
+The Windows .NET 10/WPF application shell is in active development. The current
+build initializes a SQLCipher-encrypted local database and a Windows DPAPI
+protected database key and has IMAP/SMTP app-password setup, bounded manual
+sync, local reading, and explicit plain-text sending. It does not support
+OAuth, full-history synchronization, or migration from eM Client. Do not rely
+on it as your only mail client or as a complete backup.
+
+The roadmap prioritizes secure storage, account connectivity, synchronization,
+and data migration before broadening features or platforms.
 
 ## Related documents
 
 - [ROADMAP.md](ROADMAP.md)
+- [SEARCH_FEATURE_SPEC.md](SEARCH_FEATURE_SPEC.md)
 - [CHANGELOG.md](CHANGELOG.md)
 - [SECURITY.md](SECURITY.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)

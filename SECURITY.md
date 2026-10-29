@@ -29,11 +29,29 @@ We aim to:
 
 ## Security principles
 
-- local data should remain encrypted by default
+- local mail content and its full-text index are stored in a SQLCipher-encrypted database
+- the per-user database key is generated randomly and protected with Windows DPAPI
+- provider passwords are stored separately as account-bound, Windows DPAPI-protected files; they are not stored in the database
+- IMAP connections require explicit SSL/TLS or STARTTLS and retain MailKit's normal certificate validation
+- SMTP sending is explicit, uses the configured account and provider app password, and requires SSL/TLS or STARTTLS with normal certificate validation
+- synchronization opens folders read-only and does not change server messages
+- if an existing database's key is missing or invalid, startup must not silently replace it
 - update verification should happen before installation
 - releases should be signed or otherwise checksum-verified where possible
 - data handling should minimize exposure and privilege
 - security-sensitive changes should be reviewed by maintainers
+
+## Current implementation limits
+
+This is an early development foundation, not a completed security audit. The
+database key and app passwords are bound to the current Windows user profile
+and are not backed up or recoverable through a recovery key. OAuth,
+full-history/incremental synchronization, secure backup, account recovery, and
+a complete security audit are not implemented. SMTP sending is limited to
+explicit plain-text messages and is not saved locally; if the connection fails
+during a send, the server may already have accepted the message. Check the
+provider's Sent folder before retrying. Use a test account until these limits
+have been reviewed.
 
 ## Disclosure policy
 
