@@ -1,245 +1,115 @@
 # eMail MPC
 
-A secure, fast, and privacy-conscious desktop email client designed for users who want a clean workflow, strong local control, and dependable cross-device reliability.
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="Illustration of the eMail MPC local mail workspace; standalone use is available today, while MCP and embedded AI are clearly marked as planned">
+</p>
 
-This project is built around the idea that email should be safe by default, fast to use, and flexible enough to support both personal and professional workflows without forcing users to understand low-level technical details.
+**A Windows desktop email client with an encrypted local mail copy.** Use it on its own today. MCP access for compatible AI agents and an embedded AI assistant are part of the product direction, but are **not shipped yet**.
 
-## Why this project exists
+> **Status:** active development. eMail MPC is not a full mailbox migration tool or a replacement for keeping mail on your provider's server.
 
-Most people use email every day, but many desktop clients are either too heavy, too cluttered, or too opaque about security and data handling. eMail MPC aims to provide a streamlined alternative focused on:
+## What works today
 
-- local-first privacy
-- strong encryption for stored content
-- dependable sync and update flows
-- modern email workflow with search, drafting, and organization
-- simple deployment for individuals and shared machines
+- Connect compatible IMAP and SMTP accounts using provider-issued app passwords and certificate-validated TLS.
+- Manually sync mail without changing server messages. Initial sync checks up to the 200 newest messages in each folder; later syncs are incremental.
+- Read and search the local copy. Search supports eM Client-style operators, phrases, negation, OR groups, relevance ranking, and deterministic Romanian/English natural-language query interpretation.
+- Save, reopen, edit, and delete plain-text drafts in encrypted local storage. Sending is an explicit plain-text SMTP action.
+- Download selected attachments on demand, up to 25 MiB per file. Attachments are not opened automatically.
+- Create and restore encrypted local backups. Restoring requires the Windows user profile that can decrypt the DPAPI-protected keys.
+- Check for a release when you choose **Help → Check for updates**. The app verifies the published package's URL, size, and SHA-256 before offering to run the setup wizard. Portable builds stage a verified ZIP for manual replacement.
 
-## Who it is for
+Local-first describes the app's copy and processing: your provider still hosts its mailbox, and IMAP/SMTP connections need internet access. Previously synced mail can be read and searched locally.
 
-This project is intended for:
+## AI agents and built-in AI
 
-- individuals who want a simpler, less noisy email client
-- professionals who need reliable inbox management
-- organizations that want shared deployment and secure local storage
-- users who care about privacy and explicit control over their data
+The goal is to keep the email client useful without an AI agent while making agent assistance an optional extension—not a requirement for using the mailbox.
 
-## Product direction
+| Use | Status |
+| --- | --- |
+| Standalone desktop email client | Available today; no AI agent is required |
+| Compatible external agents through an MCP server | Planned; no MCP server or agent-facing email API is shipped |
+| Built-in AI assistant | Planned; no model or assistant is shipped |
 
-**Core function:** read and compose email. **Foreground zone:** the selected message body while reading and the editable message body while composing. See the [Hallmark design language](DESIGN_LANGUAGE.md) for this app and future applications.
+The natural-language search helper recognizes a limited set of Romanian and English phrases with local rules; it does not call an AI model or send the query to a cloud service.
 
-The planned product is a desktop email client for reading, organizing, searching,
-and sending mail. The current build connects to compatible IMAP/SMTP providers
-with app passwords and supports bounded, manual, read-only synchronization,
-local message reading, encrypted local drafts, on-demand attachment downloads,
-and explicit plain-text sending. OAuth, full mailbox migration, updates, and
-mobile support remain roadmap work.
+MCP access and built-in AI are future product work, not current capabilities. Agents cannot currently read, search, or send mail through eMail MPC. The [roadmap](ROADMAP.md) remains the source of truth for planned work.
 
 ## How it works
 
-The product architecture is built around a few core principles:
+<p align="center">
+  <img src="./assets/readme/architecture.svg" width="100%" alt="Current IMAP and SMTP connections feed the eMail MPC desktop app and its SQLCipher-encrypted local mail copy; dashed paths identify the planned, not-yet-implemented MCP server and embedded AI assistant">
+</p>
 
-1. Local-first data handling
-   - messages are stored locally in a versioned encrypted structure
-   - the app controls how content is written and restored
+The desktop app stores message data in a SQLCipher-encrypted database. Windows DPAPI protects the database key and saved account credentials. IMAP folders are opened read-only; sending uses the account's configured SMTP server only when you choose to send.
 
-2. Secure update model
-   - releases are versioned and validated before installation
-   - rollback is supported to avoid broken updates
+## Get started
 
-3. Shared deployment model
-   - installation can be done once for all users on a machine
-   - updates can continue without repeated admin intervention
+### Run from source
 
-4. Extensible mailbox backend
-   - support for IMAP, Exchange, OAuth, and future providers can be layered into a stable core
-
-## Implemented foundation
-
-- Windows .NET 10/WPF application shell
-- SQLCipher-encrypted local database and Windows DPAPI-protected key
-- local full-text search UI and core search filters
-- encrypted account and folder metadata with account-scoped message search
-- versioned migrations that preserve existing mail and rebuild the search index
-- IMAP account setup with explicit SSL/TLS or STARTTLS and provider-issued app passwords
-- IMAP connection verification and remote folder discovery
-- on-demand, read-only indexing of up to the 200 newest messages per folder
-- automatic sync retrieves message text only; body parts over 2 MiB are skipped, and attachments are downloaded separately only when requested
-- attachment metadata indexing and user-requested downloads up to 25 MiB, stored in the encrypted database and saved without automatic opening
-- local reading of synchronized message text without changing server read state
-- per-account plain-text draft save, edit, reopen, send, and delete in the encrypted database
-- explicit plain-text SMTP sending over certificate-validated SSL/TLS or STARTTLS
-- separate DPAPI-protected account secrets, bound to the current Windows user and account ID
-
-OAuth, HTML compose, sending attachments, import/export, full-history sync,
-automatic updates, and telemetry are not implemented. IMAP sync is
-incremental after its initial window, but the first sync and UIDVALIDITY resets
-are capped at the 200 newest messages per folder; older history is not fetched.
-Sent messages are not stored in a local Sent folder; check the provider's Sent
-folder after sending. This is not a complete mailbox migration or a production
-sync engine.
-
-## Roadmap
-
-The project follows a staged roadmap based on product stability, not feature stacking without foundation.
-
-### v0.1 — Foundation
-- encrypted local storage
-- shared installation support
-- automated update system with rollback
-
-### v0.2 — Core reliability
-- secure account and sync engine
-- mailbox indexing and search
-- message draft management
-- update validation and release confidence checks
-
-### v0.3 — Product polish
-- localization and accessibility
-- improved sorting and prioritization
-- quality metrics and diagnostics
-- user-facing reporting and release transparency
-
-### v0.4 — Multiplatform expansion
-- macOS client support
-- Android support
-- sync and backup across devices
-
-### v0.5 — Advanced workflow
-- smart rules and automation
-- productivity features
-- better attachment and document handling
-
-### v1.0 — Stable release
-- fully validated desktop experience
-- secure release pipeline and rollback support
-- cross-platform readiness
-- public-quality documentation and support processes
-
-For the full plan, see [ROADMAP.md](ROADMAP.md).
-
-## Installation
-
-Windows packages are built by the tagged-release workflow. Each release draft
-contains a **portable ZIP** and a **setup wizard**. The wizard installs the
-self-contained Windows x64 app per user by default, can be elevated for a
-machine-wide install, and leaves mail data in the current user's
-`%LOCALAPPDATA%\eMail MPC\data` directory when the app is upgraded or
-uninstalled. Review the draft release and its SHA-256 files before publishing
-it to users.
-
-The portable ZIP runs without installation and stores its profile in a `data`
-folder beside the executable. Its database key and account secrets are still
-protected with Windows DPAPI, so that profile can only be opened by the same
-Windows user on the same machine. Do not treat copying the ZIP or profile to a
-different Windows account as a migration or backup.
-
-To add an account, choose **Add account**, enter the provider's IMAP/SMTP server
-settings and a provider-issued app password, then choose **Verify and add**.
-The app tests IMAP over certificate-validated TLS before saving the account.
-Use **Sync mail** to download the newest messages; IMAP folders are opened
-read-only, and messages on the server are not changed. Gmail app passwords
-require an eligible account with two-step verification enabled. Microsoft 365
-accounts requiring OAuth are not supported by this initial connection flow.
-For generic IMAP accounts, obtain the correct server hostname and app password
-from the provider; the Gmail values shown in the form are only defaults.
-Select a search result to read its locally stored text. Choose a specific
-account and **Compose** to send a plain-text message through its configured
-SMTP endpoint. Drafts are stored only when **Save draft** is selected; there is
-no automatic saving or local Sent copy. A connection failure during sending
-can leave delivery status uncertain; check the provider's Sent folder before
-retrying. Message attachments appear beneath
-the selected message; choose **Download** or **Save copy** to save one (maximum
-25 MiB). Files are never launched automatically. Use **Save draft** while
-composing to keep a draft in encrypted local storage; **Drafts** opens or
-deletes drafts for the selected account.
-
-## Development
-
-This project is designed to support a clear, maintainable engineering process:
-
-- versioned release metadata from a single source of truth in [version.json](version.json)
-- public update metadata in [release-manifest.json](release-manifest.json)
-- CI validation for build, metadata, and release consistency
-- automated changelog generation from conventional commits
-- documented release and rollback procedures
-
-### Build the Windows app
-
-Requirements: Windows and the .NET 10 SDK.
+Requirements: Windows 10 or later and the .NET 10 SDK.
 
 ```powershell
-dotnet build EMailMPC.slnx
+git clone https://github.com/Hermeneuticus-of-things/e-Mail-MPC.git
+cd e-Mail-MPC
 dotnet test EMailMPC.slnx
 dotnet run --project src/EMailMPC.Desktop/EMailMPC.Desktop.csproj
 ```
 
-The application stores its encrypted database and DPAPI-protected account
-secrets in the current user's `%LOCALAPPDATA%\eMail MPC\data` directory.
-Keep an independent copy of the user's data directory before testing this
-preview; an in-app backup and restore workflow is not yet available.
-Attachments saved to a path you choose are regular files outside the encrypted
-database.
+### Install a release
 
-The current build initializes an encrypted local database, searches and reads
-locally synchronized mail, and can connect to compatible IMAP/SMTP servers
-using app passwords. It does not perform OAuth, import eM Client data, or modify
-messages on the server. Use a copy/test account until the sync and migration
-limits are acceptable for your needs.
+Open [Releases](https://github.com/Hermeneuticus-of-things/e-Mail-MPC/releases) and choose either the Windows x64 setup wizard or the portable ZIP. Release packages are self-contained. The setup wizard installs per user by default and supports an elevated machine-wide install.
 
-## Contributing
+The installed app stores its data under `%LOCALAPPDATA%\eMail MPC\data`. Portable builds store a `data` folder beside the app. In both cases, the database key and saved account credentials are protected with Windows DPAPI and are tied to the Windows user profile; copying a profile to a different user or device is not a migration.
 
-Contributions are welcome. For changes to the project:
+### First use
 
-- open or review an issue before starting large work
-- keep changes focused and documented
-- follow the project’s release and testing conventions
-- ensure security-sensitive changes are reviewed carefully
+1. Choose **Add account**, enter the provider's IMAP/SMTP settings and an app password, then use **Verify and add**. Accounts requiring OAuth are not supported yet.
+2. Choose **Sync mail** to download the newest messages. Sync is bounded and read-only on the server.
+3. Search, read, and manage drafts locally. Choose **Compose** to send a plain-text message through SMTP.
 
-## Security
+Example searches:
 
-Security is a first-class requirement.
+```text
+from:ana@example.com is:unread
+subject:"project status" after:2026-01-01
+de la ana necitite ieri
+```
 
-- local data should remain encrypted by default
-- update verification must happen before installation
-- privileged actions should be minimized and explicit
-- external dependencies should be reviewed regularly
+The Romanian/English query helper is deterministic and offline. Unrecognized phrases remain an ordinary literal search.
 
-See [SECURITY.md](SECURITY.md) for reporting and handling guidance.
+## Data protection and limits
 
-## Reporting issues
+- Messages, drafts, the search index, and downloaded attachment content are stored in the encrypted local database.
+- Account credentials and the database key are protected separately with Windows DPAPI.
+- Backups are encrypted recovery archives, not portable transfer files. Restore them only with the Windows profile that can decrypt the protected keys. See [Local backup and restore](docs/LOCAL_DATA_BACKUP.md).
+- Update checks are manual; the app does not poll in the background or send telemetry. SHA-256 checks detect package corruption but do not replace publisher code signing.
+- The first sync and a UIDVALIDITY reset are limited to the newest 200 messages per folder. Full-history sync and mailbox migration are not available.
+- Drafts require an explicit save. There is no local Sent folder; after an uncertain SMTP failure, check the provider's Sent folder before retrying.
 
-Please use the GitHub issue tracker to report bugs, releases issues, feature requests, or security concerns.
+Not implemented: OAuth, HTML composition, sending attachments, folder management, full-history synchronization, mailbox import/export, automatic update rollback, MCP access, embedded AI, and macOS/Android clients.
 
-Before filing a report, include:
+## Roadmap
 
-- the exact version used
-- the operating system and environment
-- steps to reproduce the problem
-- expected versus actual behavior
-- any relevant logs, screenshots, or error details
+The current work is completing the reliability foundation: user-triggered update verification and staging are implemented; automatic rollback, Windows installation/migration validation, and additional mailbox workflows remain. AI-agent access and an embedded assistant are future product work, not current capabilities.
+
+See the full [roadmap](ROADMAP.md) for milestones, current progress, and exit criteria.
+
+## Project documents
+
+| Document | Purpose |
+| --- | --- |
+| [Roadmap](ROADMAP.md) | Milestones and remaining work |
+| [Search specification](SEARCH_FEATURE_SPEC.md) | Local search syntax and behavior |
+| [Backup and restore](docs/LOCAL_DATA_BACKUP.md) | Recovery archive contents and requirements |
+| [Security policy](SECURITY.md) | Security boundaries and reporting |
+| [Contributing](CONTRIBUTING.md) | Contribution guidance |
+
+## Contributing and support
+
+Bug reports and feature requests belong in the [issue tracker](https://github.com/Hermeneuticus-of-things/e-Mail-MPC/issues). Do not post security-sensitive findings publicly; follow [SECURITY.md](SECURITY.md) instead.
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before making a substantial change.
 
 ## License
 
-This project is distributed under the [MIT License](LICENSE).
-
-## Project status
-
-The Windows .NET 10/WPF application shell is in active development. The current
-build initializes a SQLCipher-encrypted local database and a Windows DPAPI
-protected database key and has IMAP/SMTP app-password setup, bounded
-incremental sync, local reading, on-demand attachment downloads, and explicit
-plain-text sending. It does not support OAuth, full-history synchronization,
-or migration from eM Client. Do not rely on it as your only mail client or as
-a complete backup.
-
-The roadmap prioritizes secure storage, account connectivity, synchronization,
-and data migration before broadening features or platforms.
-
-## Related documents
-
-- [ROADMAP.md](ROADMAP.md)
-- [SEARCH_FEATURE_SPEC.md](SEARCH_FEATURE_SPEC.md)
-- [CHANGELOG.md](CHANGELOG.md)
-- [SECURITY.md](SECURITY.md)
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+eMail MPC is distributed under the [MIT License](LICENSE).

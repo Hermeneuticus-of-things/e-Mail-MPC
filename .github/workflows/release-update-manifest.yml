@@ -24,18 +24,26 @@ jobs:
           set -euo pipefail
           version="${RELEASE_TAG#v}"
           mkdir -p dist/versioned
+          mkdir -p dist/setup-versioned
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern program.zip --dir dist
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern program.zip.sha256 --dir dist
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "program-$version.zip" --dir dist/versioned
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern eMail-MPC-windows-x64-setup.exe --dir dist
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern eMail-MPC-windows-x64-setup.exe.sha256 --dir dist
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "eMail-MPC-$version-windows-x64-setup.exe" --dir dist/setup-versioned
           test -s dist/program.zip
           test -s "dist/versioned/program-$version.zip"
-          (cd dist && sha256sum --check program.zip.sha256)
+          test -s dist/eMail-MPC-windows-x64-setup.exe
+          test -s "dist/setup-versioned/eMail-MPC-$version-windows-x64-setup.exe"
+          (cd dist && sha256sum --check program.zip.sha256 eMail-MPC-windows-x64-setup.exe.sha256)
           cmp --silent dist/program.zip "dist/versioned/program-$version.zip"
+          cmp --silent dist/eMail-MPC-windows-x64-setup.exe "dist/setup-versioned/eMail-MPC-$version-windows-x64-setup.exe"
           test "$(jq -r .version version.json)" = "$version"
 
       - name: Validate release metadata
         env:
-          RELEASE_ARTIFACT_PATH: dist/program.zip
+          RELEASE_PORTABLE_PATH: dist/program.zip
+          RELEASE_INSTALLER_PATH: dist/eMail-MPC-windows-x64-setup.exe
           EXPECTED_RELEASE_VERSION: ${{ github.event.release.tag_name }}
         run: python scripts/validate_release.py
 

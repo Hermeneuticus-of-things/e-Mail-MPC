@@ -37,8 +37,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - schema v6 encrypted per-account drafts with save, reopen, delete and send cleanup workflows
 - Hallmark-inspired WPF mail workspace with account and folder filtering, a resizable message reader, explicit empty states, and account removal that preserves local mail and drafts
 - quiet, compact WPF controls with secondary actions retained in menus and message composition focused on the writing surface
-- root-level Hallmark design language for this and future applications, with an explicit rule to organize full menus rather than remove commands for visual simplicity
+- root-level Ionuț Application Design Language for every app type, with an explicit rule to preserve commands and organize full menus rather than remove items for visual simplicity
+- encrypted SQLCipher snapshot backups with DPAPI-protected key/account secret preservation, SHA-256 archive validation, and confirmed restore with same-user restrictions
 - Windows x64 self-contained publishing, portable-profile mode, and an Inno Setup wizard with per-user and elevated installation options
+- user-triggered update checks with pinned HTTPS release metadata and setup URL, SHA-256/size verification, and explicit installer launch confirmation
 - migration coverage for schema v4 to the latest database schema
 - nullable flow guards in the search parser; solution build now completes without warnings
 - secure update and release validation policy documentation
@@ -48,7 +50,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - standardized release and maintenance workflow expectations
 
 ### Fixed
-- none yet
+- Negated terms inside OR groups now participate in Boolean matching instead of being silently ignored.
+- Repeated structured search filters now intersect rather than overwrite one another; repeated date bounds select the narrowest interval.
+- Parsing the maximum calendar date as a `before:` bound no longer overflows.
 
 ## [0.1.0] - 2026-10-28
 

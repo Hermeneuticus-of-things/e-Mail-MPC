@@ -51,6 +51,14 @@ Acest test confirmă că aplicația acceptă o interogare și expune rezultate �
 4. Utilizatorul poate modifica filtrele sau reveni la căutarea literală dacă interpretarea nu este corectă.
 5. Rezultatele indică folderul, expeditorul, subiectul, data și potrivirea relevantă.
 
+## Reguli pentru limbajul de interogare local
+
+- Termenii liberi se combină implicit cu AND; textul între ghilimele caută o frază.
+- Grupurile dintre paranteze combină termenii cu OR; negația din interiorul grupului este evaluată ca parte a expresiei, nu eliminată.
+- Criteriile structurate repetate se intersectează (AND). Limitele `after:` multiple o aleg pe cea mai recentă, iar limitele `before:` pe cea mai timpurie.
+- Dacă un termen sau o combinație nu poate fi reprezentată în siguranță, parserul revine la căutarea literală; nu trebuie să arunce excepții pentru valori de dată la limitele calendarului.
+- Căutarea prin grupuri booleene rămâne locală; sortarea după relevanță revine la ordonarea după dată când expresia nu are un scor FTS direct.
+
 ## Cerințe funcționale pentru v1
 
 - Căutare textuală în expeditor, destinatari, subiect și corpul mesajului.
@@ -78,6 +86,7 @@ Acest test confirmă că aplicația acceptă o interogare și expune rezultate �
 - Căutarea locală funcționează în modul offline pentru conținutul deja sincronizat și indexat.
 - Niciun conținut nu părăsește dispozitivul în fluxul de căutare implicit.
 - Testele acoperă interogări goale, caractere Unicode, fusuri orare, intervale de date, filtre combinate și rezultate fără potrivire.
+- Grupurile OR cu termeni negați și filtrele structurate repetate respectă semantica AND/OR; datele-limită nu provoacă overflow.
 
 ## Etapizare recomandată
 

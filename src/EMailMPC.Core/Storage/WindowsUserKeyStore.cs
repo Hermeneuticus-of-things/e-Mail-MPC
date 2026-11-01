@@ -19,7 +19,7 @@ public sealed class WindowsUserKeyStore
 
         if (File.Exists(fullPath))
         {
-            return Unprotect(File.ReadAllBytes(fullPath));
+            return Load(fullPath);
         }
 
         var key = RandomNumberGenerator.GetBytes(32);
@@ -65,6 +65,20 @@ public sealed class WindowsUserKeyStore
                 File.Delete(temporaryPath);
             }
         }
+    }
+
+    public byte[] Load(string keyPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(keyPath);
+        EnsureWindows();
+
+        var fullPath = Path.GetFullPath(keyPath);
+        if (!File.Exists(fullPath))
+        {
+            throw new FileNotFoundException("The protected database key was not found.", fullPath);
+        }
+
+        return Unprotect(File.ReadAllBytes(fullPath));
     }
 
     private static byte[] Unprotect(byte[] protectedKey)

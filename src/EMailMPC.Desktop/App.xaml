@@ -159,7 +159,7 @@
         </Style>
 
         <Style TargetType="{x:Type DataGridCell}">
-            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="Padding" Value="8,4" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Style.Triggers>
@@ -179,7 +179,7 @@
         <Style TargetType="{x:Type ListBoxItem}">
             <Setter Property="MinHeight" Value="32" />
             <Setter Property="Padding" Value="7,5" />
-            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="Margin" Value="0,0" />
             <Setter Property="Foreground" Value="{StaticResource InkSecondaryBrush}" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -191,7 +191,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="Transparent"
                                 BorderThickness="3,0,0,0"
-                                CornerRadius="3">
+                                CornerRadius="4">
                             <ContentPresenter />
                         </Border>
                         <ControlTemplate.Triggers>

@@ -9,7 +9,22 @@ namespace EMailMPC.Core.Search;
 /// parser fell back to the literal whole-string search; in that case both match
 /// expressions are null.
 /// </summary>
-public sealed record ParsedMailQuery(SearchCriteria Criteria, string? TextMatch, string? ExcludedTextMatch);
+public sealed record ParsedMailQuery(
+    SearchCriteria Criteria,
+    string? TextMatch,
+    string? ExcludedTextMatch,
+    IReadOnlyList<SearchCriteria>? AdditionalCriteria = null,
+    MailTextExpression? TextExpression = null);
+
+public abstract record MailTextExpression;
+
+public sealed record MailTextMatchExpression(string Match) : MailTextExpression;
+
+public sealed record MailTextAndExpression(IReadOnlyList<MailTextExpression> Terms) : MailTextExpression;
+
+public sealed record MailTextOrExpression(IReadOnlyList<MailTextExpression> Terms) : MailTextExpression;
+
+public sealed record MailTextNotExpression(MailTextExpression Term) : MailTextExpression;
 
 /// <summary>
 /// Parses eM Client style query syntax (keyed operators, quoted phrases, negation,
@@ -177,6 +192,8 @@ public static class MailQueryParser
     {
         private readonly List<string> _positiveClauses = [];
         private readonly List<string> _negativeClauses = [];
+        private readonly List<MailTextExpression> _booleanGroups = [];
+        private readonly List<SearchCriteria> _additionalCriteria = [];
         private string? _sender;
         private string? _recipient;
         private string? _folder;
@@ -210,6 +227,7 @@ public static class MailQueryParser
         private bool AddGroup(QueryTerm group)
         {
             var innerClauses = new List<string>();
+            var innerExpressions = new List<MailTextExpression>();
             foreach (var inner in group.GroupTerms!)
             {
                 string? clause;
@@ -230,11 +248,24 @@ public static class MailQueryParser
                 if (clause is not null)
                 {
                     innerClauses.Add(clause);
+                    var expression = new MailTextMatchExpression(clause);
+                    innerExpressions.Add(inner.Negated
+                        ? new MailTextNotExpression(expression)
+                        : expression);
                 }
             }
 
             if (innerClauses.Count == 0)
             {
+                return true;
+            }
+
+            if (group.Negated || group.GroupTerms!.Any(term => term.Negated))
+            {
+                MailTextExpression expression = new MailTextOrExpression(innerExpressions);
+                _booleanGroups.Add(group.Negated
+                    ? new MailTextNotExpression(expression)
+                    : expression);
                 return true;
             }
 
@@ -254,7 +285,15 @@ public static class MailQueryParser
                 case "from":
                     if (!term.Negated)
                     {
-                        _sender = term.Value;
+                        if (_sender is null)
+                        {
+                            _sender = term.Value;
+                        }
+                        else
+                        {
+                            _additionalCriteria.Add(new SearchCriteria(sender: term.Value));
+                        }
+
                         return true;
                     }
 
@@ -263,7 +302,15 @@ public static class MailQueryParser
                 case "to" or "cc" or "bcc":
                     if (!term.Negated)
                     {
-                        _recipient = term.Value;
+                        if (_recipient is null)
+                        {
+                            _recipient = term.Value;
+                        }
+                        else
+                        {
+                            _additionalCriteria.Add(new SearchCriteria(recipient: term.Value));
+                        }
+
                         return true;
                     }
 
@@ -277,7 +324,15 @@ public static class MailQueryParser
                         return false;
                     }
 
-                    _folder = term.Value;
+                    if (_folder is null)
+                    {
+                        _folder = term.Value;
+                    }
+                    else
+                    {
+                        _additionalCriteria.Add(new SearchCriteria(folder: term.Value));
+                    }
+
                     return true;
                 case "is":
                     return AddFlagValue(term);
@@ -288,7 +343,7 @@ public static class MailQueryParser
                         return false;
                     }
 
-                    _hasAttachments = !term.Negated;
+                    AddBooleanCriteria(ref _hasAttachments, !term.Negated, value => new SearchCriteria(hasAttachments: value));
                     return true;
                 case "read" or "unread" or "flagged":
                     return AddStandaloneFlag(term);
@@ -304,11 +359,11 @@ public static class MailQueryParser
 
                     if (key.Equals("after", StringComparison.OrdinalIgnoreCase))
                     {
-                        _after = date;
+                        _after = _after is null || date > _after ? date : _after;
                     }
                     else
                     {
-                        _before = date;
+                        _before = _before is null || date < _before ? date : _before;
                     }
 
                     return true;
@@ -360,11 +415,11 @@ public static class MailQueryParser
                 || term.Value.Equals("unflagged", StringComparison.OrdinalIgnoreCase);
             if (targetsFlags)
             {
-                _isFlagged = effective;
+                AddBooleanCriteria(ref _isFlagged, effective, value => new SearchCriteria(isFlagged: value));
             }
             else
             {
-                _isRead = effective;
+                AddBooleanCriteria(ref _isRead, effective, value => new SearchCriteria(isRead: value));
             }
 
             return true;
@@ -386,14 +441,26 @@ public static class MailQueryParser
             var effective = truth != term.Negated;
             if (key.Equals("flagged", StringComparison.OrdinalIgnoreCase))
             {
-                _isFlagged = effective;
+                AddBooleanCriteria(ref _isFlagged, effective, value => new SearchCriteria(isFlagged: value));
             }
             else
             {
-                _isRead = effective;
+                AddBooleanCriteria(ref _isRead, effective, value => new SearchCriteria(isRead: value));
             }
 
             return true;
+        }
+
+        private void AddBooleanCriteria(ref bool? existingValue, bool value, Func<bool, SearchCriteria> createCriteria)
+        {
+            if (existingValue is null)
+            {
+                existingValue = value;
+            }
+            else
+            {
+                _additionalCriteria.Add(createCriteria(value));
+            }
         }
 
         private void AddClause(string clause, bool negated)
@@ -438,8 +505,10 @@ public static class MailQueryParser
                 isFlagged: _isFlagged,
                 hasAttachments: _hasAttachments,
                 accountId: accountId);
+            var textExpression = BuildTextExpression();
             if (textMatch is null
                 && excludedTextMatch is null
+                && textExpression is null
                 && criteria.Sender is null
                 && criteria.Recipient is null
                 && criteria.Folder is null
@@ -454,7 +523,27 @@ public static class MailQueryParser
                 return Literal(raw, accountId);
             }
 
-            return new ParsedMailQuery(criteria, textMatch, excludedTextMatch);
+            return new ParsedMailQuery(
+                criteria,
+                textMatch,
+                excludedTextMatch,
+                _additionalCriteria.Count == 0 ? null : _additionalCriteria.ToArray(),
+                textExpression);
+        }
+
+        private MailTextExpression? BuildTextExpression()
+        {
+            if (_booleanGroups.Count == 0)
+            {
+                return null;
+            }
+
+            var terms = new List<MailTextExpression>();
+            terms.AddRange(_positiveClauses.Select(clause => new MailTextMatchExpression(clause)));
+            terms.AddRange(_booleanGroups);
+            terms.AddRange(_negativeClauses.Select(clause =>
+                (MailTextExpression)new MailTextNotExpression(new MailTextMatchExpression(clause))));
+            return terms.Count == 1 ? terms[0] : new MailTextAndExpression(terms);
         }
     }
 
@@ -526,7 +615,11 @@ public static class MailQueryParser
             }
 
             // A bare day used as the upper bound stays inclusive of that whole day.
-            result = isBefore ? date.AddDays(1).AddTicks(-1) : date;
+            result = isBefore
+                ? date.Date == DateTime.MaxValue.Date
+                    ? DateTimeOffset.MaxValue
+                    : date.AddDays(1).AddTicks(-1)
+                : date;
             return true;
         }
 

@@ -1,11 +1,14 @@
 ﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Security.Cryptography;
 using EMailMPC.Core.Accounts;
 using EMailMPC.Core.Search;
 using EMailMPC.Core.Storage;
+using EMailMPC.Core.Updates;
 using Microsoft.Win32;
 
 namespace EMailMPC.Desktop;
@@ -60,6 +63,112 @@ public partial class MainWindow : Window
         Close();
     }
 
+    private async void BackupDataMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var application = (App)Application.Current;
+        var dialog = new SaveFileDialog
+        {
+            AddExtension = true,
+            DefaultExt = ".empbackup",
+            FileName = $"eMail-MPC-backup-{DateTime.Now:yyyyMMdd-HHmmss}.empbackup",
+            Filter = "eMail MPC encrypted backup (*.empbackup)|*.empbackup",
+            OverwritePrompt = true,
+            Title = "Back up encrypted local mail data"
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        SetBusy(true);
+        StatusText.Text = "Creating an encrypted local backup...";
+        try
+        {
+            await new LocalMailBackupService().CreateAsync(
+                application.MailDatabase!,
+                application.DatabaseKeyPath,
+                application.AccountSecretsDirectory,
+                dialog.FileName);
+            StatusText.Text = "Encrypted backup created. It can be restored only where this Windows user can decrypt its DPAPI-protected key.";
+            MessageBox.Show(
+                this,
+                "The encrypted backup was created. Keep it private and retain access to the same Windows user profile; the database key and account credentials are protected with Windows DPAPI and are not portable to another user or device.",
+                "Backup complete",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text = "Backup failed.";
+            MessageBox.Show(
+                this,
+                $"The local backup could not be created.\n\n{exception.Message}",
+                "Backup error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private async void RestoreDataMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            CheckFileExists = true,
+            Filter = "eMail MPC encrypted backup (*.empbackup)|*.empbackup",
+            Multiselect = false,
+            Title = "Choose an encrypted local backup"
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        var confirmation = MessageBox.Show(
+            this,
+            "Restoring replaces the current local mail database, protected account credentials, and drafts with the selected backup. The app will close afterward. Continue only if this is the backup you intend to restore.",
+            "Replace local mail data?",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        var application = (App)Application.Current;
+        SetBusy(true);
+        StatusText.Text = "Validating and restoring the selected backup...";
+        application.MailDatabase!.Dispose();
+        try
+        {
+            var cleanupWarning = await new LocalMailBackupService().RestoreAsync(dialog.FileName, application.DataDirectory);
+            MessageBox.Show(
+                this,
+                cleanupWarning is null
+                    ? "The backup was restored. eMail MPC will close; start it again to open the restored mail data."
+                    : $"The backup was restored, but the prior data copy could not be removed.\n\n{cleanupWarning}\n\neMail MPC will close; start it again to open the restored mail data.",
+                "Restore complete",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            Application.Current.Shutdown();
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text = "Restore failed; the existing data was preserved when restoration had not committed.";
+            MessageBox.Show(
+                this,
+                $"The backup could not be restored.\n\n{exception.Message}\n\nThe application will close. Start it again to reopen the current local data.",
+                "Restore error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Application.Current.Shutdown(1);
+        }
+    }
+
     private void FocusSearchMenuItem_Click(object sender, RoutedEventArgs e)
     {
         SearchBox.Focus();
@@ -105,6 +214,102 @@ public partial class MainWindow : Window
             "About eMail MPC",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
+    }
+
+    private async void CheckForUpdatesMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        SetBusy(true);
+        StatusText.Text = "Checking the official release manifest...";
+        try
+        {
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            var updateService = new VerifiedUpdateService(httpClient);
+            var manifest = await updateService.GetManifestAsync();
+            var currentVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+            if (!VerifiedUpdateService.IsUpdateAvailable(currentVersion, manifest.Version))
+            {
+                StatusText.Text = $"eMail MPC {currentVersion} is up to date.";
+                MessageBox.Show(
+                    this,
+                    $"This installation is version {currentVersion}. The latest stable release is {manifest.Version}.",
+                    "No update available",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            var isPortable = File.Exists(Path.Combine(AppContext.BaseDirectory, "portable.mode"));
+            var packageDescription = isPortable ? "portable ZIP" : "setup package";
+            var packageSize = isPortable ? manifest.SizeBytes : manifest.InstallerSizeBytes;
+            var downloadChoice = MessageBox.Show(
+                this,
+                $"Version {manifest.Version} is available. Download and verify the official {packageDescription} ({packageSize:N0} bytes)?",
+                "Update available",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information,
+                MessageBoxResult.No);
+            if (downloadChoice != MessageBoxResult.Yes)
+            {
+                StatusText.Text = "Update download cancelled.";
+                return;
+            }
+
+            var stagingDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "eMail MPC",
+                "updates");
+            if (isPortable)
+            {
+                var archivePath = await updateService.DownloadAndVerifyPortableArchiveAsync(manifest, stagingDirectory);
+                StatusText.Text = $"Version {manifest.Version} portable archive downloaded and verified.";
+                MessageBox.Show(
+                    this,
+                    $"The portable archive passed its size and SHA-256 checks.\n\nSHA-256: {manifest.Sha256}\n\nTo update, close eMail MPC, keep a backup of the current application folder, and extract the archive over the existing program files. Preserve the existing data folder.",
+                    "Verified portable update staged",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                StatusText.Text = $"Verified portable update is staged at {archivePath}.";
+            }
+            else
+            {
+                var installerPath = await updateService.DownloadAndVerifyInstallerAsync(manifest, stagingDirectory);
+                StatusText.Text = $"Version {manifest.Version} setup package downloaded and verified.";
+                var installChoice = MessageBox.Show(
+                    this,
+                    $"The setup package passed its size and SHA-256 checks.\n\nSHA-256: {manifest.InstallerSha256}\n\nRun the official setup wizard now? Your local mail data is stored separately from the program files.",
+                    "Verified update ready",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question,
+                    MessageBoxResult.No);
+                if (installChoice == MessageBoxResult.Yes)
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = installerPath,
+                        UseShellExecute = true
+                    });
+                    StatusText.Text = $"Starting the setup wizard for version {manifest.Version}.";
+                }
+                else
+                {
+                    StatusText.Text = $"Verified update is staged at {installerPath}.";
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text = "Update check or verification failed.";
+            MessageBox.Show(
+                this,
+                $"An update could not be checked or verified. The setup package was not started.\n\n{exception.Message}",
+                "Update check failed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
     }
 
     private async void SearchButton_Click(object sender, RoutedEventArgs e)
@@ -762,6 +967,9 @@ public partial class MainWindow : Window
         SearchBox.IsEnabled = !isBusy;
         SearchButton.IsEnabled = !isBusy;
         MenuAddAccountItem.IsEnabled = !isBusy;
+        BackupDataMenuItem.IsEnabled = !isBusy;
+        RestoreDataMenuItem.IsEnabled = !isBusy;
+        CheckForUpdatesMenuItem.IsEnabled = !isBusy;
         AccountCombo.IsEnabled = !isBusy;
         FolderListBox.IsEnabled = !isBusy;
         AttachmentsGrid.IsEnabled = !isBusy;

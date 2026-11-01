@@ -48,6 +48,43 @@ public sealed class EncryptedMailDatabase : IDisposable
         Migrate(connection);
     }
 
+    public void CreateEncryptedSnapshot(string snapshotPath)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(snapshotPath);
+        var fullPath = Path.GetFullPath(snapshotPath);
+        if (string.Equals(fullPath, _databasePath, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("A database snapshot must use a different file path.", nameof(snapshotPath));
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        using var source = OpenConnection();
+        using var destination = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = fullPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
+        }.ToString());
+
+        destination.Open();
+        var keyHex = Convert.ToHexString(_key);
+        ExecuteNonQuery(destination, $"PRAGMA key = \"x'{keyHex}'\";");
+        VerifyCipher(destination);
+        ExecuteNonQuery(destination, "PRAGMA cipher_memory_security = ON;");
+        ExecuteNonQuery(destination, "PRAGMA journal_mode = DELETE;");
+        ExecuteNonQuery(destination, "PRAGMA synchronous = FULL;");
+        source.BackupDatabase(destination);
+
+        using var integrity = destination.CreateCommand();
+        integrity.CommandText = "PRAGMA integrity_check;";
+        var result = integrity.ExecuteScalar()?.ToString();
+        if (!string.Equals(result, "ok", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"The encrypted database snapshot failed integrity validation: {result ?? "no result"}.");
+        }
+    }
+
     public async Task SaveAccountAsync(MailAccountRecord account, CancellationToken cancellationToken = default)
     {
         await SaveAccountAsync(account, [], cancellationToken).ConfigureAwait(false);
@@ -484,11 +521,11 @@ public sealed class EncryptedMailDatabase : IDisposable
                 return [];
             }
 
-            return await SearchCoreAsync(criteria, literalMatch, excludedTextMatch: null, sort, limit, cancellationToken)
+            return await SearchCoreAsync(criteria, literalMatch, excludedTextMatch: null, textExpression: null, sort, limit, cancellationToken)
                 .ConfigureAwait(false);
         }
 
-        return await SearchCoreAsync(criteria, textMatch: null, excludedTextMatch: null, sort, limit, cancellationToken)
+        return await SearchCoreAsync(criteria, textMatch: null, excludedTextMatch: null, textExpression: null, sort, limit, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -504,7 +541,15 @@ public sealed class EncryptedMailDatabase : IDisposable
             return await SearchAsync(query.Criteria, limit, sort, cancellationToken).ConfigureAwait(false);
         }
 
-        return await SearchCoreAsync(query.Criteria, query.TextMatch, query.ExcludedTextMatch, sort, limit, cancellationToken)
+        return await SearchCoreAsync(
+                query.Criteria,
+                query.TextMatch,
+                query.ExcludedTextMatch,
+                query.TextExpression,
+                sort,
+                limit,
+                cancellationToken,
+                query.AdditionalCriteria)
             .ConfigureAwait(false);
     }
 
@@ -512,9 +557,11 @@ public sealed class EncryptedMailDatabase : IDisposable
         SearchCriteria criteria,
         string? textMatch,
         string? excludedTextMatch,
+        MailTextExpression? textExpression,
         SearchSort sort,
         int limit,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<SearchCriteria>? additionalCriteria = null)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(criteria);
@@ -541,24 +588,19 @@ public sealed class EncryptedMailDatabase : IDisposable
             command.Parameters.AddWithValue("$excludedText", excludedTextMatch);
         }
 
-        AddTextFilter(clauses, command, "m.sender", "$sender", criteria.Sender);
-        AddTextFilter(clauses, command, "m.recipients", "$recipient", criteria.Recipient);
-        AddTextFilter(clauses, command, "m.folder", "$folder", criteria.Folder);
-        AddExactTextFilter(clauses, command, "m.account_id", "$accountId", criteria.AccountId);
-        AddBooleanFilter(clauses, command, "m.is_read", "$isRead", criteria.IsRead);
-        AddBooleanFilter(clauses, command, "m.is_flagged", "$isFlagged", criteria.IsFlagged);
-        AddBooleanFilter(clauses, command, "m.has_attachments", "$hasAttachments", criteria.HasAttachments);
-
-        if (criteria.After is not null)
+        if (textExpression is not null)
         {
-            clauses.Add("m.received_at_utc >= $after");
-            command.Parameters.AddWithValue("$after", criteria.After.Value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+            var parameterIndex = 0;
+            clauses.Add(BuildTextExpressionSql(textExpression, command, ref parameterIndex));
         }
 
-        if (criteria.Before is not null)
+        AddCriteriaFilters(clauses, command, criteria, string.Empty, includeAccountId: true);
+        if (additionalCriteria is not null)
         {
-            clauses.Add("m.received_at_utc <= $before");
-            command.Parameters.AddWithValue("$before", criteria.Before.Value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+            for (var index = 0; index < additionalCriteria.Count; index++)
+            {
+                AddCriteriaFilters(clauses, command, additionalCriteria[index], index.ToString(CultureInfo.InvariantCulture), includeAccountId: false);
+            }
         }
 
         var whereClause = clauses.Count == 0 ? string.Empty : $"WHERE {string.Join(" AND ", clauses)}";
@@ -591,6 +633,84 @@ public sealed class EncryptedMailDatabase : IDisposable
         }
 
         return results;
+    }
+
+    private static string BuildTextExpressionSql(
+        MailTextExpression expression,
+        SqliteCommand command,
+        ref int parameterIndex)
+    {
+        switch (expression)
+        {
+            case MailTextMatchExpression match:
+            {
+                var parameter = $"$textExpression{parameterIndex++}";
+                command.Parameters.AddWithValue(parameter, match.Match);
+                return $"EXISTS (SELECT 1 FROM mail_messages_fts WHERE mail_messages_fts.rowid = m.rowid AND mail_messages_fts MATCH {parameter})";
+            }
+            case MailTextAndExpression andExpression:
+                return BuildTextExpressionGroupSql(andExpression.Terms, " AND ", command, ref parameterIndex);
+            case MailTextOrExpression orExpression:
+                return BuildTextExpressionGroupSql(orExpression.Terms, " OR ", command, ref parameterIndex);
+            case MailTextNotExpression notExpression:
+                return $"NOT ({BuildTextExpressionSql(notExpression.Term, command, ref parameterIndex)})";
+            default:
+                throw new ArgumentOutOfRangeException(nameof(expression), expression, "Unknown mail text expression.");
+        }
+    }
+
+    private static string BuildTextExpressionGroupSql(
+        IReadOnlyList<MailTextExpression> terms,
+        string separator,
+        SqliteCommand command,
+        ref int parameterIndex)
+    {
+        if (terms.Count == 0)
+        {
+            throw new ArgumentException("A text expression group must contain at least one term.", nameof(terms));
+        }
+
+        var clauses = new List<string>(terms.Count);
+        foreach (var term in terms)
+        {
+            clauses.Add(BuildTextExpressionSql(term, command, ref parameterIndex));
+        }
+
+        return $"({string.Join(separator, clauses)})";
+    }
+
+    private static void AddCriteriaFilters(
+        ICollection<string> clauses,
+        SqliteCommand command,
+        SearchCriteria criteria,
+        string suffix,
+        bool includeAccountId)
+    {
+        AddTextFilter(clauses, command, "m.sender", $"$sender{suffix}", criteria.Sender);
+        AddTextFilter(clauses, command, "m.recipients", $"$recipient{suffix}", criteria.Recipient);
+        AddTextFilter(clauses, command, "m.folder", $"$folder{suffix}", criteria.Folder);
+        if (includeAccountId)
+        {
+            AddExactTextFilter(clauses, command, "m.account_id", "$accountId", criteria.AccountId);
+        }
+
+        AddBooleanFilter(clauses, command, "m.is_read", $"$isRead{suffix}", criteria.IsRead);
+        AddBooleanFilter(clauses, command, "m.is_flagged", $"$isFlagged{suffix}", criteria.IsFlagged);
+        AddBooleanFilter(clauses, command, "m.has_attachments", $"$hasAttachments{suffix}", criteria.HasAttachments);
+
+        if (criteria.After is not null)
+        {
+            var parameter = $"$after{suffix}";
+            clauses.Add($"m.received_at_utc >= {parameter}");
+            command.Parameters.AddWithValue(parameter, criteria.After.Value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        }
+
+        if (criteria.Before is not null)
+        {
+            var parameter = $"$before{suffix}";
+            clauses.Add($"m.received_at_utc <= {parameter}");
+            command.Parameters.AddWithValue(parameter, criteria.Before.Value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        }
     }
 
     public async Task<FolderSyncStateRecord?> GetFolderSyncStateAsync(

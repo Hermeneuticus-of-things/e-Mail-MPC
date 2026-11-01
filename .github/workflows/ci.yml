@@ -24,6 +24,9 @@ jobs:
       - name: Test core library
         run: dotnet test tests/EMailMPC.Core.Tests/EMailMPC.Core.Tests.csproj --configuration Release --nologo
 
+      - name: Validate release metadata
+        run: python scripts/validate_release.py
+
   windows-build-and-packages:
     runs-on: windows-latest
     steps:
@@ -42,7 +45,8 @@ jobs:
           "APP_VERSION=$version" >> $env:GITHUB_ENV
 
       - name: Build and test
-        run: dotnet test EMailMPC.slnx --configuration Release --nologo
+        shell: pwsh
+        run: dotnet test EMailMPC.slnx --configuration Release --nologo "-p:Version=$env:APP_VERSION"
 
       - name: Publish self-contained Windows x64 app
         shell: pwsh
@@ -51,6 +55,7 @@ jobs:
             --configuration Release `
             --runtime win-x64 `
             --self-contained true `
+            -p:Version=$env:APP_VERSION `
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
             --output artifacts/publish
@@ -63,6 +68,8 @@ jobs:
           New-Item -ItemType Directory -Force $portable | Out-Null
           Copy-Item "artifacts/publish/*" $portable -Recurse -Force
           Set-Content -Path (Join-Path $portable "portable.mode") -Value "portable" -NoNewline
+          Compress-Archive -Path (Join-Path $portable "*") -DestinationPath "$output/program.zip"
+          Copy-Item "$output/program.zip" "$output/program-$env:APP_VERSION.zip"
           Compress-Archive -Path (Join-Path $portable "*") -DestinationPath "$output/eMail-MPC-$env:APP_VERSION-windows-x64-portable.zip"
 
           choco install innosetup --yes --no-progress
@@ -70,6 +77,7 @@ jobs:
           $env:APP_OUTPUT_DIR = $output
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "installer/eMailMPC.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed with exit code $LASTEXITCODE." }
+          Copy-Item "$output/eMail-MPC-$env:APP_VERSION-windows-x64-setup.exe" "$output/eMail-MPC-windows-x64-setup.exe"
 
           $packages = Get-ChildItem $output -File | Where-Object { $_.Extension -in ".zip", ".exe" }
           foreach ($file in $packages) {
@@ -81,8 +89,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-install-test-packages
-          path: |
-            artifacts/eMail-MPC-*-windows-x64-portable.zip
-            artifacts/eMail-MPC-*-windows-x64-setup.exe
-            artifacts/*.sha256
+          path: artifacts/*
           if-no-files-found: error

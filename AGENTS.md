@@ -2,7 +2,7 @@
 
 ## Application UI
 
-- Follow [`DESIGN_LANGUAGE.md`](DESIGN_LANGUAGE.md) as the canonical Hallmark design language for this and future application GUI design, implementation, or redesign tasks. Hallmark is this document, not a separate optional design track.
+- For every application GUI design, implementation, review, or redesign, invoke the global `Ionuț Application Design Language` skill when available and follow [`DESIGN_LANGUAGE.md`](DESIGN_LANGUAGE.md) as this repository's copy of its universal rules. They are mandatory, not optional inspiration.
 - Keep reading and composing email in the foreground. In the compose window, focus the message body; keep supporting controls available, compact, and quiet.
 - Use compact dropdowns for enumerated values and resizable vector-scalable layouts. Preserve every implemented feature and command; organize full menus into clear categories instead of deleting or flattening them for visual simplicity. Follow the documented accessibility and sizing requirements and use native email workflows.
 

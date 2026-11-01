@@ -16,9 +16,9 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <StackPanel Margin="0,0,0,10">
+        <StackPanel Margin="0,0,0,8">
             <TextBlock Text="Connect an email account"
-                       FontSize="16"
+                       FontSize="14"
                        FontWeight="SemiBold"
                        Foreground="{StaticResource InkBrush}" />
             <TextBlock Margin="0,4,0,0"
@@ -29,7 +29,7 @@
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <Grid Margin="0,0,10,0">
+            <Grid Margin="0,0,8,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="150" />
                     <ColumnDefinition Width="*" />
@@ -50,53 +50,53 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,10"
+                <TextBlock Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,8"
                            Text="Account"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource InkBrush}" />
-                <TextBlock Grid.Row="1" Text="Email address" VerticalAlignment="Center" Margin="0,0,8,10" />
+                <TextBlock Grid.Row="1" Text="Email address" VerticalAlignment="Center" Margin="0,0,8,8" />
                 <TextBox x:Name="EmailBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
-                         Margin="0,0,0,10" Padding="8" AutomationProperties.Name="Email address" />
-                <TextBlock Grid.Row="2" Text="Display name" VerticalAlignment="Center" Margin="0,0,8,10" />
+                         Margin="0,0,0,8" Padding="8" AutomationProperties.Name="Email address" />
+                <TextBlock Grid.Row="2" Text="Display name" VerticalAlignment="Center" Margin="0,0,8,8" />
                 <TextBox x:Name="DisplayNameBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
-                         Margin="0,0,0,10" Padding="8" />
-                <TextBlock Grid.Row="3" Text="App password" VerticalAlignment="Center" Margin="0,0,8,10" />
+                         Margin="0,0,0,8" Padding="8" />
+                <TextBlock Grid.Row="3" Text="App password" VerticalAlignment="Center" Margin="0,0,8,8" />
                 <PasswordBox x:Name="PasswordBox" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2"
-                             Margin="0,0,0,10" Padding="8" AutomationProperties.Name="App password" />
+                             Margin="0,0,0,8" Padding="8" AutomationProperties.Name="App password" />
 
-                <TextBlock Grid.Row="4" Grid.ColumnSpan="3" Margin="0,14,0,10"
+                <TextBlock Grid.Row="4" Grid.ColumnSpan="3" Margin="0,12,0,8"
                            Text="Incoming mail (IMAP)"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource InkBrush}" />
-                <TextBlock Grid.Row="5" Text="Server" VerticalAlignment="Center" Margin="0,0,8,10" />
+                <TextBlock Grid.Row="5" Text="Server" VerticalAlignment="Center" Margin="0,0,8,8" />
                 <TextBox x:Name="ImapHostBox" Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2"
-                         Margin="0,0,0,10" Padding="8" Text="imap.gmail.com" />
-                <TextBlock Grid.Row="6" Text="Port" VerticalAlignment="Center" Margin="0,0,8,10" />
+                         Margin="0,0,0,8" Padding="8" Text="imap.gmail.com" />
+                <TextBlock Grid.Row="6" Text="Port" VerticalAlignment="Center" Margin="0,0,8,8" />
                 <TextBox x:Name="ImapPortBox" Grid.Row="6" Grid.Column="1"
-                         Margin="0,0,8,10" Padding="8" Text="993" />
-                <ComboBox x:Name="ImapSecurityBox" Grid.Row="6" Grid.Column="2" Margin="0,0,0,10"
+                         Margin="0,0,8,8" Padding="8" Text="993" />
+                <ComboBox x:Name="ImapSecurityBox" Grid.Row="6" Grid.Column="2" Margin="0,0,0,8"
                           AutomationProperties.Name="IMAP transport security">
                     <ComboBoxItem Content="SSL/TLS" Tag="SslOnConnect" IsSelected="True" />
                     <ComboBoxItem Content="STARTTLS" Tag="StartTls" />
                 </ComboBox>
 
-                <TextBlock Grid.Row="7" Grid.ColumnSpan="3" Margin="0,14,0,10"
+                <TextBlock Grid.Row="7" Grid.ColumnSpan="3" Margin="0,12,0,8"
                            Text="Outgoing mail (SMTP)"
                            FontWeight="SemiBold"
                            Foreground="{StaticResource InkBrush}" />
-                <TextBlock Grid.Row="8" Text="Server" VerticalAlignment="Center" Margin="0,0,8,10" />
+                <TextBlock Grid.Row="8" Text="Server" VerticalAlignment="Center" Margin="0,0,8,8" />
                 <TextBox x:Name="SmtpHostBox" Grid.Row="8" Grid.Column="1" Grid.ColumnSpan="2"
-                         Margin="0,0,0,10" Padding="8" Text="smtp.gmail.com" />
-                <TextBlock Grid.Row="9" Text="Port" VerticalAlignment="Center" Margin="0,0,8,10" />
+                         Margin="0,0,0,8" Padding="8" Text="smtp.gmail.com" />
+                <TextBlock Grid.Row="9" Text="Port" VerticalAlignment="Center" Margin="0,0,8,8" />
                 <TextBox x:Name="SmtpPortBox" Grid.Row="9" Grid.Column="1"
-                         Margin="0,0,8,10" Padding="8" Text="587" />
-                <ComboBox x:Name="SmtpSecurityBox" Grid.Row="9" Grid.Column="2" Margin="0,0,0,10"
+                         Margin="0,0,8,8" Padding="8" Text="587" />
+                <ComboBox x:Name="SmtpSecurityBox" Grid.Row="9" Grid.Column="2" Margin="0,0,0,8"
                           AutomationProperties.Name="SMTP transport security">
                     <ComboBoxItem Content="STARTTLS" Tag="StartTls" IsSelected="True" />
                     <ComboBoxItem Content="SSL/TLS" Tag="SslOnConnect" />
                 </ComboBox>
 
-                <TextBlock Grid.Row="10" Grid.ColumnSpan="3" Margin="0,14,0,4"
+                <TextBlock Grid.Row="10" Grid.ColumnSpan="3" Margin="0,12,0,4"
                            Text="IMAP and SMTP use verified TLS. SMTP is used only when you choose Send email."
                            FontSize="12"
                            Foreground="#697783"

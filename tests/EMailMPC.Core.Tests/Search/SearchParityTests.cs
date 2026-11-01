@@ -199,6 +199,69 @@ public sealed class SearchParityTests
     }
 
     [Fact]
+    public async Task NegatedTermsInsideOrGroupsAreEvaluatedAsBooleanConditions()
+    {
+        using var directory = new TemporaryDirectory();
+        using var database = NewDatabase(directory);
+        await database.SaveMessageAsync(CreateMessage("alpha-and-beta", "Alpha beta", "both terms"));
+        await database.SaveMessageAsync(CreateMessage("clean", "Unrelated", "nothing excluded"));
+        await database.SaveMessageAsync(CreateMessage("beta-only", "Beta", "only beta"));
+
+        var matches = await database.SearchAsync(MailQueryParser.Parse("(alpha -beta)"));
+
+        Assert.Equal(["alpha-and-beta", "clean"], matches.Select(match => match.Id).ToList());
+
+        var excludedGroup = await database.SearchAsync(MailQueryParser.Parse("-(alpha beta)"));
+        Assert.Equal(["clean"], excludedGroup.Select(match => match.Id).ToList());
+    }
+
+    [Fact]
+    public async Task RepeatedStructuredFiltersAreCombinedWithAndSemantics()
+    {
+        using var directory = new TemporaryDirectory();
+        using var database = NewDatabase(directory);
+        await database.SaveMessageAsync(CreateMessage("both", "Report", "text", sender: "ana@example.com"));
+        await database.SaveMessageAsync(CreateMessage("one", "Report", "text", sender: "ana@other.test"));
+        await database.SaveMessageAsync(CreateMessage("none", "Report", "text", sender: "bob@example.com"));
+
+        var matches = await database.SearchAsync(MailQueryParser.Parse("from:ana from:example"));
+
+        Assert.Equal(["both"], matches.Select(match => match.Id).ToList());
+    }
+
+    [Fact]
+    public async Task ContradictoryRepeatedBooleanFiltersReturnNoResults()
+    {
+        using var directory = new TemporaryDirectory();
+        using var database = NewDatabase(directory);
+        await database.SaveMessageAsync(CreateMessage("read", "Status", "text", isRead: true));
+        await database.SaveMessageAsync(CreateMessage("unread", "Status", "text"));
+
+        var matches = await database.SearchAsync(MailQueryParser.Parse("is:read is:unread"));
+
+        Assert.Empty(matches);
+    }
+
+    [Fact]
+    public void MaximumDateUpperBoundDoesNotOverflow()
+    {
+        var parsed = MailQueryParser.Parse("before:9999-12-31");
+
+        Assert.Null(parsed.Criteria.Text);
+        Assert.Equal(DateTimeOffset.MaxValue, parsed.Criteria.Before);
+    }
+
+    [Fact]
+    public void RepeatedDateBoundsUseTheNarrowestIntersection()
+    {
+        var parsed = MailQueryParser.Parse(
+            "after:2026-01-01 after:2026-02-01 before:2026-03-31 before:2026-02-28");
+
+        Assert.Equal(new DateTime(2026, 2, 1), parsed.Criteria.After!.Value.Date);
+        Assert.Equal(new DateTime(2026, 2, 28), parsed.Criteria.Before!.Value.Date);
+    }
+
+    [Fact]
     public async Task SubjectOperatorIgnoresBodyOnlyOccurrences()
     {
         using var directory = new TemporaryDirectory();

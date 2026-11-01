@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="380" viewBox="0 0 1200 380"
+     role="img" aria-labelledby="title desc">
+  <title id="title">eMail MPC local-first email</title>
+  <desc id="desc">A Hallmark-inspired illustration of a compact email workspace and encrypted local mail store. The desktop app works standalone today; MCP and embedded AI are marked as planned.</desc>
+
+  <rect width="1200" height="380" fill="#FFFCFCFB"/>
+  <path d="M56 42H1144" stroke="#E3E3E1" stroke-width="2"/>
+
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="64" y="82" fill="#167B72" font-size="18" font-weight="600" letter-spacing="2">LOCAL-FIRST EMAIL · WINDOWS DESKTOP</text>
+    <text x="64" y="147" fill="#292929" font-size="46" font-weight="600">Your mail, close at hand.</text>
+    <text x="64" y="194" fill="#292929" font-size="25">A standalone encrypted mail client today.</text>
+    <text x="64" y="233" fill="#474747" font-size="21">Compatible-agent access through MCP and an</text>
+    <text x="64" y="262" fill="#474747" font-size="21">embedded AI assistant are planned, not shipped.</text>
+    <text x="64" y="324" fill="#656565" font-size="17" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">ILLUSTRATION · NOT A PRODUCT SCREENSHOT</text>
+  </g>
+
+  <g transform="translate(620 54)">
+    <rect x="0" y="0" width="520" height="320" rx="8" fill="#FFFFFF" stroke="#E3E3E1" stroke-width="2"/>
+    <path d="M0 49H520" stroke="#E3E3E1" stroke-width="2"/>
+    <text x="22" y="32" fill="#292929" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600">Mailbox</text>
+    <text x="420" y="32" fill="#656565" font-family="Segoe UI, Arial, sans-serif" font-size="16">local copy</text>
+
+    <rect x="16" y="64" width="174" height="187" rx="5" fill="#F6F6F4"/>
+    <rect x="16" y="64" width="4" height="58" rx="2" fill="#167B72"/>
+    <rect x="32" y="79" width="116" height="9" rx="4" fill="#474747"/>
+    <rect x="32" y="98" width="138" height="7" rx="3" fill="#C5C6C3"/>
+    <path d="M28 132H178M28 190H178" stroke="#E3E3E1" stroke-width="2"/>
+    <rect x="32" y="147" width="102" height="8" rx="4" fill="#656565"/>
+    <rect x="32" y="164" width="126" height="6" rx="3" fill="#D1D1CE"/>
+    <rect x="32" y="205" width="92" height="8" rx="4" fill="#656565"/>
+    <rect x="32" y="222" width="120" height="6" rx="3" fill="#D1D1CE"/>
+
+    <text x="214" y="83" fill="#656565" font-family="Segoe UI, Arial, sans-serif" font-size="15" letter-spacing="1">READ AND SEARCH LOCALLY</text>
+    <rect x="214" y="99" width="274" height="12" rx="5" fill="#292929"/>
+    <rect x="214" y="128" width="251" height="7" rx="3" fill="#C5C6C3"/>
+    <rect x="214" y="146" width="274" height="7" rx="3" fill="#C5C6C3"/>
+    <rect x="214" y="164" width="238" height="7" rx="3" fill="#C5C6C3"/>
+    <rect x="214" y="198" width="260" height="7" rx="3" fill="#D1D1CE"/>
+    <rect x="214" y="216" width="238" height="7" rx="3" fill="#D1D1CE"/>
+
+    <rect x="0" y="278" width="520" height="42" rx="5" fill="#DDF0ED"/>
+    <circle cx="23" cy="299" r="7" fill="#167B72"/>
+    <text x="40" y="305" fill="#193D39" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="600">Encrypted local store · no AI required</text>
+  </g>
+</svg>

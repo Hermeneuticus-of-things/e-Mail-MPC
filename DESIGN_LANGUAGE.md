@@ -1,104 +1,98 @@
-# Hallmark design language
+# Ionuț Application Design Language
 
-This is the canonical Hallmark design language for the owner's applications, including eMail MPC and applications developed in the future. It is a shared rule set, not an eMail MPC-only visual theme or an optional layer beside another design system.
+This is a **general application design language**. It applies to **every application**, any app, any project. Follow it exactly when designing, redesigning, or reviewing UI.
 
-Each application must declare its own core function and foreground zone in its README or `DESIGN.md`, in one short sentence. Do not copy another application's declaration without verifying that it describes that application's actual work.
+**Purpose:** eliminate generic, noisy, AI-generated interface slop. Put the app’s real work in front; keep supporting controls quiet, complete, and reachable.
 
-## Governing rules
+## 1. Core function (varies by app type)
 
-1. **Core work is foreground.** The application's declared core work receives attention first; surrounding controls do not compete with it.
-2. **The core function and foreground zone are explicit.** Each application declares them in its own README or `DESIGN.md`.
-3. **Supporting controls stay available but in the background.** Menus, buttons, toolbars, and panels remain reachable, but stay small, discrete, and quiet.
-4. **Use minimal size.** Controls are only as large as needed to read and use. Avoid wasted space and interface elements that take space away from the core work.
-5. **No large buttons or oversized icons.**
-6. **Use compact dropdowns for enumerated field values.** Use buttons for primary actions and confirmation, not as button bars for changing values.
-7. **Keep the interface quiet.** Attention stays on the application's core work.
-8. **Use a vector-scalable interface.** Windows are resizable; layouts reflow, and graphics stay crisp instead of stretching raster bitmaps.
-9. **Hallmark is this document.** Do not treat it as a separate or optional design track.
+Define the **core function** first. It occupies the foreground.
 
-## Available without taking over
+Examples (same language for all app types):
 
-Keep controls reachable without letting them dominate the work surface:
+- Writing app → writing
+- News app → showing news
+- Email app → showing emails
+- AI app → the AI interaction
+- Any other app → that app’s primary job
 
-| Pattern | Use |
-| --- | --- |
-| Minimal persistent toolbar | Actions needed often |
-| Collapsible panel | Secondary tools that would otherwise crowd email; collapsed by default when appropriate |
-| Popover or overlay | Short contextual choices |
-| Keyboard shortcut | Frequent actions |
-| Distraction-free view | Only with a clear, documented way to restore controls |
+### Completeness is required — do not strip controls
 
-Do not remove a control without leaving a clear path to it.
+Foreground core function does **not** mean removing controls. Do **not** simplify menus by deleting items the user needs. Keep complex menus, submenus, and sub-submenus; arrange them with clear layout. Stripping needed items violates this language. Completeness of functionality is required; only visual presentation should be quiet and organized.
 
-## Dropdowns and actions
+## 2. Measurable scales
 
-Use compact dropdowns for fixed sets of values such as account, sort order, mode, or security protocol. Keep item heights compact, content widths bounded, selection clear, and keyboard navigation available. Long lists should support type-ahead or search when needed.
+- Control height: **24 / 28 / 32 px**
+- Icons: **16 / 20 px**
+- UI typography: **12–14 px**
+- Spacing: **4 / 8 / 12 px**
+- Corner radius: **4–8 px**
+- Control padding: **4–8 px**
+- Toolbar height: **32–40 px**
+- Min click target: **32 px** pointer · **44 px** touch
 
-Use inline text fields for free text and suitable compact pickers for dates or numbers. Use compact toggles for on/off values. Do not replace an enum dropdown with a prominent row of buttons.
+No immense buttons. No oversized icons.
 
-Reserve visible buttons for primary actions and confirmation. Keep secondary actions in menus or other compact, accessible controls. Make destructive actions visibly distinct without making them prominent. Hover, focus, active, disabled, loading, and error states should remain discreet and understandable.
+## 3. Disappear vs stay available
 
-## Menus and feature reachability
+Controls stay available. Prefer: minimal persistent toolbar; collapsible panels; popover/overlay; command palette; keyboard shortcuts. Hide only when another discoverable path remains. Reappear from the same entry point every time.
 
-Compactness is not a reason to remove functionality or flatten a useful menu. Keep the application's implemented commands reachable. When there are many commands, organize the full set into clear menu categories and well-named submenus, with separators, keyboard shortcuts, or a command palette where they help users find work. Do not delete, hide permanently, or omit menu commands merely to make the interface look simpler. A compact dropdown is appropriate for changing an enumerated field value; it is not a substitute for preserving the application's broader command structure.
+## 4. Dropdown specifications
 
-## Scale, accessibility, and layout
+Prefer compact dropdowns for field value changes.
 
-Use the following proposed defaults until product-specific tokens are adopted:
+- Enumerations/modes/presets/sort/filter/status/view → dropdown
+- Binary → toggle; free text/numbers → inline edit
+- Max width ~280–320 px; item height matches control height
+- Search/filter above ~12 items; arrow/Enter/Escape/typeahead
+- Clear selected state; optional grouping
+- Exceptions: primary commit, live data, steppers, free text
 
-| Token | Proposed default |
-| --- | --- |
-| Control height | 24, 28, or 32 px |
-| Icon size | 16 or 20 px |
-| Interface text | 12–14 px |
-| Spacing | 4, 8, or 12 px |
-| Pointer target | At least 32 px |
-| Touch target | At least 44 px |
-| Motion | 120–200 ms, orientation only, no bounce |
+## 5. Buttons and actions
 
-Quiet must not mean low contrast. Provide WCAG AA contrast for text and essential controls, visible keyboard focus, full keyboard navigation, and screen-reader labels. Keep pointer and touch targets usable even if their visible glyphs are smaller. Respect reduced-motion preferences wherever motion is introduced.
+Buttons only for **primary action** or **confirmation**. No huge buttons. Secondary actions in menus, small icons, or command palette. Hierarchy: primary / secondary / tertiary / destructive. States: hover, focus, active, disabled, loading, error. Confirm irreversible destructive actions.
 
-Prefer compact density. On narrow surfaces, let supporting controls collapse or move to an overlay so email keeps the largest share of the space. Supporting panels must not permanently cover the message surface. Loading, empty, error, success, offline, and permission-denied feedback should be clear and discreet, without oversized dialogs or repeated disruptive notifications.
+## 6. Accessibility
 
-## Vector-scalable interface
+Quiet ≠ low contrast. Min WCAG AA. Visible focus. Full keyboard. Screen reader labels. Honor reduced motion.
 
-Vectorial and resizable describe one requirement: the interface scales cleanly as its window or surface is resized.
+## 7. Vector-scalable interface (one rule)
 
-- Keep application windows resizable and define practical minimum sizes.
-- Use layout containers that reflow with available space rather than fixed, rasterized screen compositions.
-- Use native vector controls, vector paths, or scalable assets for interface graphics; do not use pixel-baked artwork that blurs when enlarged.
-- Test the interface at both minimum and larger window sizes. Ensure the message body remains usable and supporting controls stay reachable.
+The interface is **vector-scalable**: layout, icons, and controls scale cleanly with resolution and zoom. One rule — not separate raster/vector modes. Density tokens stay proportional to UI scale.
 
-## Shared tokens and components
+## 8. Surrounding controls (wording)
 
-Where a shared Hallmark design system is available, use its size, type, spacing, and color tokens and its reference controls. Until then, each product should use consistent local tokens and follow these rules rather than inventing oversized one-off controls.
+Say surrounding controls, interface elements, menus, toolbars, panels. Supporting UI stays visually background, discrete, readable, and reachable.
 
-## Anti-patterns
+## 9. Density and layout
 
-Do not use oversized buttons or icons, prominent button bars for enum values, blurry raster graphics, inaccessible hidden controls, flashy motion, or low-contrast styling. Refer to supporting UI as **surrounding controls** or **interface elements**.
+Compact grouping; spacing 4/8/12; clear hierarchy. Nested menus allowed — organize, do not delete.
 
-## Governance
+## 10. Feedback and errors
 
-- The owner ratifies exceptions and proposed token defaults.
-- Update this document when the design language changes; products should follow the current version.
-- Record any approved deviation in product documentation.
-- Apply these rules as Hallmark for all product UI work; do not create a parallel optional design track.
-- Before merging UI work, review it against the checklist below.
+Short waits: in-place/status. Errors: actionable next to the control. Success: quiet.
 
-## Compliance checklist
+## 11. Theming and motion
 
-- [ ] The product declares its core function and foreground zone.
-- [ ] The core function is visually dominant.
-- [ ] Buttons and icons are compact.
-- [ ] Enumerated fields use compact dropdowns, or an exception is documented.
-- [ ] Supporting controls stay reachable without competing with email.
-- [ ] Windows are resizable and the interface remains crisp and usable at different sizes.
-- [ ] Contrast, visible focus, keyboard navigation, and accessible names are provided.
-- [ ] Frequent actions have keyboard paths.
-- [ ] Documentation uses "surrounding controls" or "interface elements" for the UI.
-- [ ] UI changes follow Hallmark as defined here, not a parallel optional layer.
+AA in every theme. Motion optional; never required to understand state.
 
-## Project documentation
+## 12. AI-assisted UI work
 
-- [README](README.md)
-- [Roadmap](ROADMAP.md)
+1. Preserve every command/menu/setting unless the human removes it.
+2. Prefer rearrange/resize over delete.
+3. Apply scales and quiet presentation.
+4. No hero buttons, marketing filler, or decorative empty panels.
+5. This document is mandatory.
+
+## 13. Conformance checklist
+
+- [ ] Core function for this app type is primary
+- [ ] No needed menu items removed for “simplicity”
+- [ ] Heights 24/28/32; icons 16/20; type 12–14; spacing 4/8/12; targets 32/44
+- [ ] Supporting controls small, discrete, reachable
+- [ ] Hide via toolbar/panel/popover/palette/shortcuts only
+- [ ] Dropdowns per §4; buttons per §5; a11y per §6
+- [ ] Vector-scalable one rule applied
+- [ ] General language — any application
+
+*Ionuț Application Design Language — governing UI rules for every application.*

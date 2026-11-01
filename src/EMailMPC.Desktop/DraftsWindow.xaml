@@ -16,12 +16,12 @@
         </Grid.RowDefinitions>
         <StackPanel Margin="0,0,0,8">
             <TextBlock Text="Saved drafts"
-                       FontSize="16"
+                       FontSize="14"
                        FontWeight="SemiBold"
                        Foreground="{StaticResource InkBrush}" />
             <TextBlock x:Name="AccountText"
-                       Margin="0,3,0,0"
-                       FontSize="11"
+                       Margin="0,4,0,0"
+                       FontSize="12"
                        Foreground="{StaticResource MutedBrush}" />
         </StackPanel>
 
@@ -45,7 +45,7 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <DockPanel Grid.Row="2" Margin="0,6,0,0">
+        <DockPanel Grid.Row="2" Margin="0,8,0,0">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Button x:Name="DeleteButton"
                         Margin="0,0,8,0"

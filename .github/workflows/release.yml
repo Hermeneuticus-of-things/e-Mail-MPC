@@ -34,6 +34,9 @@ jobs:
           test -f CHANGELOG.md
           grep -q "## \[${GITHUB_REF_NAME#v}\]" CHANGELOG.md || echo "Warning: changelog entry for ${GITHUB_REF_NAME#v} not found; please update before release."
 
+      - name: Validate release manifest URLs
+        run: python scripts/validate_release.py
+
   build-windows:
     needs: validate
     runs-on: windows-latest
@@ -53,7 +56,8 @@ jobs:
           "APP_VERSION=$version" >> $env:GITHUB_ENV
 
       - name: Build and test
-        run: dotnet test EMailMPC.slnx --configuration Release --nologo
+        shell: pwsh
+        run: dotnet test EMailMPC.slnx --configuration Release --nologo "-p:Version=$env:APP_VERSION"
 
       - name: Publish self-contained Windows x64 app
         shell: pwsh
@@ -62,6 +66,7 @@ jobs:
             --configuration Release `
             --runtime win-x64 `
             --self-contained true `
+            -p:Version=$env:APP_VERSION `
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
             --output artifacts/publish
@@ -82,6 +87,7 @@ jobs:
           $env:APP_OUTPUT_DIR = $output
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "installer/eMailMPC.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed with exit code $LASTEXITCODE." }
+          Copy-Item "$output/eMail-MPC-$env:APP_VERSION-windows-x64-setup.exe" "$output/eMail-MPC-windows-x64-setup.exe"
 
           $packages = Get-ChildItem $output -File | Where-Object { $_.Extension -in ".zip", ".exe" }
           foreach ($file in $packages) {
