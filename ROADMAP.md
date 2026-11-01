@@ -2,6 +2,8 @@
 
 This roadmap defines the product path from foundation to stable release. The sequence is intentional: security, installation, and update reliability come before feature breadth.
 
+The application UI follows the product's canonical [Hallmark design language](docs/DESIGN_LANGUAGE.md), including its foreground-zone declaration, compact controls, accessibility requirements, and vector-scalable resizing rule.
+
 ## Milestone v0.1 — Foundation
 
 ### Goals

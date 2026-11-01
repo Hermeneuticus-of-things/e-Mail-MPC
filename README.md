@@ -25,6 +25,8 @@ This project is intended for:
 
 ## Product direction
 
+**Core function:** read and compose email. **Foreground zone:** the selected message body while reading and the editable message body while composing. See the [Hallmark design language](docs/DESIGN_LANGUAGE.md) for the UI rules.
+
 The planned product is a desktop email client for reading, organizing, searching,
 and sending mail. The current build connects to compatible IMAP/SMTP providers
 with app passwords and supports bounded, manual, read-only synchronization,

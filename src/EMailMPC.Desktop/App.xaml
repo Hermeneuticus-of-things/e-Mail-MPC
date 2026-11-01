@@ -26,7 +26,7 @@
         </Style>
 
         <Style TargetType="{x:Type Button}">
-            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="Padding" Value="7,3" />
             <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
             <Setter Property="Background" Value="{StaticResource PaperRaisedBrush}" />
@@ -72,7 +72,7 @@
         </Style>
 
         <Style TargetType="{x:Type TextBox}">
-            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="Padding" Value="8,4" />
             <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
             <Setter Property="Background" Value="{StaticResource PaperBrush}" />
@@ -92,7 +92,7 @@
         </Style>
 
         <Style TargetType="{x:Type PasswordBox}">
-            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="Padding" Value="8,4" />
             <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
             <Setter Property="Background" Value="{StaticResource PaperBrush}" />
@@ -107,7 +107,7 @@
         </Style>
 
         <Style TargetType="{x:Type ComboBox}">
-            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="Padding" Value="6,3" />
             <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
             <Setter Property="Background" Value="{StaticResource PaperBrush}" />
@@ -142,7 +142,7 @@
         </Style>
 
         <Style TargetType="{x:Type DataGridRow}">
-            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="Background" Value="{StaticResource PaperBrush}" />
             <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource RuleBrush}" />
@@ -177,7 +177,7 @@
         </Style>
 
         <Style TargetType="{x:Type ListBoxItem}">
-            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="MinHeight" Value="32" />
             <Setter Property="Padding" Value="7,5" />
             <Setter Property="Margin" Value="0,1" />
             <Setter Property="Foreground" Value="{StaticResource InkSecondaryBrush}" />
