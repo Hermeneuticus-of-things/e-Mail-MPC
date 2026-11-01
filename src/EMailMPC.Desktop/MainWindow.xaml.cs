@@ -75,7 +75,7 @@ public partial class MainWindow : Window
 
     private void FoldersMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        FolderColumn.Width = new GridLength(FoldersMenuItem.IsChecked ? 204 : 0);
+        FolderColumn.Width = new GridLength(FoldersMenuItem.IsChecked ? 168 : 0);
     }
 
     private void ReaderMenuItem_Click(object sender, RoutedEventArgs e)
@@ -83,7 +83,7 @@ public partial class MainWindow : Window
         ReaderColumn.Width = ReaderMenuItem.IsChecked
             ? new GridLength(1.15, GridUnitType.Star)
             : new GridLength(0);
-        ReaderSplitterColumn.Width = new GridLength(ReaderMenuItem.IsChecked ? 6 : 0);
+        ReaderSplitterColumn.Width = new GridLength(ReaderMenuItem.IsChecked ? 4 : 0);
     }
 
     private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
