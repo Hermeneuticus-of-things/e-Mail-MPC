@@ -86,16 +86,6 @@ public partial class MainWindow : Window
         ReaderSplitterColumn.Width = new GridLength(ReaderMenuItem.IsChecked ? 6 : 0);
     }
 
-    private void SortNewestMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        SortCombo.SelectedIndex = 0;
-    }
-
-    private void SortRelevanceMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        SortCombo.SelectedIndex = 1;
-    }
-
     private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
     {
         var version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "development";
@@ -761,7 +751,7 @@ public partial class MainWindow : Window
         _isBusy = isBusy;
         SearchBox.IsEnabled = !isBusy;
         SearchButton.IsEnabled = !isBusy;
-        AddAccountButton.IsEnabled = !isBusy;
+        MenuAddAccountItem.IsEnabled = !isBusy;
         AccountCombo.IsEnabled = !isBusy;
         FolderListBox.IsEnabled = !isBusy;
         AttachmentsGrid.IsEnabled = !isBusy;
@@ -771,10 +761,7 @@ public partial class MainWindow : Window
     private void UpdateAccountActions()
     {
         var hasSelectedAccount = (AccountCombo.SelectedItem as AccountFilterItem)?.Account is not null;
-        SyncButton.IsEnabled = !_isBusy && hasSelectedAccount;
-        ComposeButton.IsEnabled = !_isBusy && hasSelectedAccount;
-        DraftsButton.IsEnabled = !_isBusy && hasSelectedAccount;
-        RemoveAccountButton.IsEnabled = !_isBusy && hasSelectedAccount;
+        MenuAddAccountItem.IsEnabled = !_isBusy;
         MenuSyncItem.IsEnabled = !_isBusy && hasSelectedAccount;
         MenuDraftsItem.IsEnabled = !_isBusy && hasSelectedAccount;
         MenuRemoveAccountItem.IsEnabled = !_isBusy && hasSelectedAccount;

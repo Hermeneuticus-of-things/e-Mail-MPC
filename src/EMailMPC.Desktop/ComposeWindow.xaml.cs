@@ -42,6 +42,12 @@ public partial class ComposeWindow : Window
 
     public bool WasDraftSaved { get; private set; }
 
+    private void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        BodyBox.Focus();
+        BodyBox.CaretIndex = BodyBox.Text.Length;
+    }
+
     private async void SendButton_Click(object sender, RoutedEventArgs e)
     {
         if (_isBusy)

@@ -8,19 +8,20 @@
         MinHeight="360"
         WindowStartupLocation="CenterOwner"
         Loaded="Window_Loaded">
-    <Grid Margin="24">
+    <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <StackPanel Margin="0,0,0,16">
+        <StackPanel Margin="0,0,0,8">
             <TextBlock Text="Saved drafts"
-                       FontSize="24"
+                       FontSize="16"
                        FontWeight="SemiBold"
                        Foreground="{StaticResource InkBrush}" />
             <TextBlock x:Name="AccountText"
-                       Margin="0,6,0,0"
+                       Margin="0,3,0,0"
+                       FontSize="11"
                        Foreground="{StaticResource MutedBrush}" />
         </StackPanel>
 
@@ -44,23 +45,20 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <DockPanel Grid.Row="2" Margin="0,16,0,0">
+        <DockPanel Grid.Row="2" Margin="0,6,0,0">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Button x:Name="DeleteButton"
                         Margin="0,0,8,0"
-                        Padding="16,8"
                         Content="Delete draft"
                         IsEnabled="False"
                         Click="DeleteButton_Click" />
                 <Button x:Name="OpenButton"
                         Margin="0,0,8,0"
-                        Padding="16,8"
                         Content="Open draft"
                         IsEnabled="False"
                         IsDefault="True"
                         Click="OpenButton_Click" />
-                <Button Padding="16,8"
-                        Content="Close"
+                <Button Content="Close"
                         IsCancel="True" />
             </StackPanel>
             <TextBlock x:Name="StatusText"

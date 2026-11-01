@@ -9,20 +9,21 @@
         ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner"
         Closing="Window_Closing">
-    <Grid Margin="24">
+    <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <StackPanel Margin="0,0,0,18">
+        <StackPanel Margin="0,0,0,10">
             <TextBlock Text="Connect an email account"
-                       FontSize="24"
+                       FontSize="16"
                        FontWeight="SemiBold"
                        Foreground="{StaticResource InkBrush}" />
-            <TextBlock Margin="0,7,0,0"
+            <TextBlock Margin="0,4,0,0"
                        Text="Uses IMAP over verified TLS. Enter a provider-issued app password; your normal account password is not recommended."
+                       FontSize="12"
                        Foreground="#536270"
                        TextWrapping="Wrap" />
         </StackPanel>
@@ -103,11 +104,11 @@
             </Grid>
         </ScrollViewer>
 
-        <DockPanel Grid.Row="2" Margin="0,18,0,0">
+        <DockPanel Grid.Row="2" Margin="0,8,0,0">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <Button x:Name="CancelButton" Margin="0,0,8,0" Padding="16,8"
+                <Button x:Name="CancelButton" Margin="0,0,8,0"
                         Content="Cancel" Click="CancelButton_Click" />
-                <Button x:Name="ConnectButton" Padding="18,8"
+                <Button x:Name="ConnectButton"
                         Content="Verify and add" IsDefault="True" Click="ConnectButton_Click" />
             </StackPanel>
             <TextBlock x:Name="StatusText"

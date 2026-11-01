@@ -11,7 +11,6 @@
         <SolidColorBrush x:Key="MutedBrush" Color="#FF656565" />
         <SolidColorBrush x:Key="RuleBrush" Color="#FFE3E3E1" />
         <SolidColorBrush x:Key="AccentBrush" Color="#FF167B72" />
-        <SolidColorBrush x:Key="AccentInkBrush" Color="#FFFFFFFF" />
         <SolidColorBrush x:Key="AccentSoftInkBrush" Color="#FF193D39" />
 
         <Style TargetType="{x:Type Window}">
@@ -27,14 +26,14 @@
         </Style>
 
         <Style TargetType="{x:Type Button}">
-            <Setter Property="MinHeight" Value="36" />
-            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="7,3" />
             <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
             <Setter Property="Background" Value="{StaticResource PaperRaisedBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource RuleBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="FontSize" Value="13" />
-            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Normal" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -72,21 +71,9 @@
             </Style.Triggers>
         </Style>
 
-        <Style x:Key="PrimaryButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="{StaticResource InkBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource InkBrush}" />
-            <Setter Property="Foreground" Value="{StaticResource AccentInkBrush}" />
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{StaticResource AccentBrush}" />
-                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-
         <Style TargetType="{x:Type TextBox}">
-            <Setter Property="MinHeight" Value="36" />
-            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="8,4" />
             <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
             <Setter Property="Background" Value="{StaticResource PaperBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource RuleBrush}" />
@@ -105,8 +92,8 @@
         </Style>
 
         <Style TargetType="{x:Type PasswordBox}">
-            <Setter Property="MinHeight" Value="36" />
-            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="8,4" />
             <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
             <Setter Property="Background" Value="{StaticResource PaperBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource RuleBrush}" />
@@ -120,8 +107,8 @@
         </Style>
 
         <Style TargetType="{x:Type ComboBox}">
-            <Setter Property="MinHeight" Value="36" />
-            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="6,3" />
             <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
             <Setter Property="Background" Value="{StaticResource PaperBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource RuleBrush}" />
@@ -148,13 +135,14 @@
             <Setter Property="Background" Value="{StaticResource PaperBrush}" />
             <Setter Property="BorderThickness" Value="0,0,0,1" />
             <Setter Property="BorderBrush" Value="{StaticResource InkBrush}" />
-            <Setter Property="Padding" Value="10,8" />
-            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="7,5" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Normal" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
         </Style>
 
         <Style TargetType="{x:Type DataGridRow}">
-            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="MinHeight" Value="30" />
             <Setter Property="Background" Value="{StaticResource PaperBrush}" />
             <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource RuleBrush}" />
@@ -189,8 +177,8 @@
         </Style>
 
         <Style TargetType="{x:Type ListBoxItem}">
-            <Setter Property="MinHeight" Value="38" />
-            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="7,5" />
             <Setter Property="Margin" Value="0,1" />
             <Setter Property="Foreground" Value="{StaticResource InkSecondaryBrush}" />
             <Setter Property="Background" Value="Transparent" />
