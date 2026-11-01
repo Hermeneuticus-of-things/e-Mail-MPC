@@ -421,7 +421,7 @@ public sealed class EncryptedMailDatabaseTests
             new ImapMailService(database).TestAndListFoldersAsync(account, "not-an-oauth-token"));
     }
 
-    [Fact]
+    [WindowsFact]
     public void ProtectsAccountSecretsAndSupportsReplacementAndDeletion()
     {
         using var directory = new TemporaryDirectory();
@@ -537,7 +537,7 @@ public sealed class EncryptedMailDatabaseTests
         Assert.Single(await reopened.SearchAsync(new SearchCriteria(text: "existing")));
     }
 
-    [Fact]
+    [WindowsFact]
     public void WindowsKeyStoreReloadsTheSameProtectedKey()
     {
         using var directory = new TemporaryDirectory();
