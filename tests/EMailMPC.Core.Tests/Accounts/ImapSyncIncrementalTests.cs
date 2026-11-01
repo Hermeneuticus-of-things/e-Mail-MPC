@@ -174,6 +174,80 @@ public sealed class ImapSyncIncrementalTests
     }
 
     [Fact]
+    public async Task SyncPersistsAttachmentMetadataAndDownloadsContentOnDemand()
+    {
+        using var directory = new TemporaryDirectory();
+        using var database = await CreateDatabaseAsync(directory);
+        var account = CreateAccount();
+        var folder = CreateInboxRecord(account);
+        await database.SaveAccountAsync(account, [folder]);
+        var expectedContent = new byte[] { 1, 2, 3, 4 };
+        var remoteAttachment = new ImapRemoteAttachment(
+            "2",
+            "report.pdf",
+            "application/pdf",
+            expectedContent.Length,
+            null,
+            IsInline: false);
+        var remoteMessage = CreateMessage(1) with
+        {
+            HasAttachments = true,
+            Attachments = [remoteAttachment]
+        };
+        var fake = new FakeImapSyncClient();
+        fake.AddFolder(folder.RemoteId, 42, [remoteMessage]);
+        fake.SetAttachmentContent(folder.RemoteId, remoteMessage.Uid, remoteAttachment.PartSpecifier, expectedContent);
+        var service = new ImapMailService(database, () => fake);
+        var syncFolderId = SyncFolderId(account, folder);
+        var messageId = $"{account.Id}:{syncFolderId}:{remoteMessage.Uid}";
+
+        await service.SynchronizeAsync(account, "app-password", [folder]);
+
+        var attachment = Assert.Single(await database.ListMessageAttachmentsAsync(messageId));
+        Assert.Equal("report.pdf", attachment.FileName);
+        Assert.Equal(AttachmentContentState.NotDownloaded, attachment.ContentState);
+        Assert.Null(await database.GetAttachmentContentAsync(attachment.Id));
+
+        var downloaded = await service.DownloadAttachmentAsync(
+            account,
+            "app-password",
+            folder,
+            remoteMessage.Uid,
+            attachment);
+
+        Assert.Equal(expectedContent, downloaded);
+        Assert.Equal(expectedContent, await database.GetAttachmentContentAsync(attachment.Id));
+        Assert.Contains($"download:{folder.RemoteId}:{remoteMessage.Uid}:2", fake.CallLog);
+        Assert.Contains("disconnect", fake.CallLog);
+    }
+
+    [Fact]
+    public async Task AttachmentOverDownloadLimitIsRejectedBeforeConnecting()
+    {
+        using var directory = new TemporaryDirectory();
+        using var database = await CreateDatabaseAsync(directory);
+        var account = CreateAccount();
+        var folder = CreateInboxRecord(account);
+        var attachment = new MailAttachmentRecord(
+            "account:folder:1:attachment",
+            "account:folder:1",
+            "2",
+            "large.bin",
+            "application/octet-stream",
+            EncryptedMailDatabase.MaximumAttachmentBytes + 1L,
+            null,
+            false,
+            AttachmentContentState.NotDownloaded);
+        var fake = new FakeImapSyncClient();
+        var service = new ImapMailService(database, () => fake);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            service.DownloadAttachmentAsync(account, "app-password", folder, 1, attachment));
+
+        Assert.Empty(fake.CallLog);
+    }
+
+    [Fact]
     public async Task MultipleFoldersSyncIndependently()
     {
         using var directory = new TemporaryDirectory();
@@ -282,6 +356,7 @@ public sealed class ImapSyncIncrementalTests
         }
 
         private readonly Dictionary<string, FakeFolder> _folders = new(StringComparer.Ordinal);
+        private readonly Dictionary<(string RemoteId, uint Uid, string PartSpecifier), byte[]> _attachmentContents = new();
 
         public List<string> CallLog { get; } = [];
 
@@ -317,6 +392,11 @@ public sealed class ImapSyncIncrementalTests
         public void ResetFolder(string remoteId, uint uidValidity, IEnumerable<ImapRemoteMessage> messages)
         {
             AddFolder(remoteId, uidValidity, messages);
+        }
+
+        public void SetAttachmentContent(string remoteId, uint uid, string partSpecifier, byte[] content)
+        {
+            _attachmentContents[(remoteId, uid, partSpecifier)] = content.ToArray();
         }
 
         public Task ConnectAsync(MailAccountRecord account, string password, CancellationToken cancellationToken)
@@ -370,6 +450,16 @@ public sealed class ImapSyncIncrementalTests
                 .Select(message => message with { BodyText = string.Empty })
                 .ToList();
             return Task.FromResult<IReadOnlyList<ImapRemoteMessage>>(messages);
+        }
+
+        public Task<byte[]> DownloadAttachmentAsync(
+            string remoteId,
+            uint uid,
+            string partSpecifier,
+            CancellationToken cancellationToken)
+        {
+            CallLog.Add($"download:{remoteId}:{uid}:{partSpecifier}");
+            return Task.FromResult(_attachmentContents[(remoteId, uid, partSpecifier)].ToArray());
         }
 
         public Task DisconnectAsync(CancellationToken cancellationToken)

@@ -28,8 +28,9 @@ This project is intended for:
 The planned product is a desktop email client for reading, organizing, searching,
 and sending mail. The current build connects to compatible IMAP/SMTP providers
 with app passwords and supports bounded, manual, read-only synchronization,
-local message reading, and explicit plain-text sending. OAuth, full mailbox
-migration, drafts, updates, and mobile support remain roadmap work.
+local message reading, encrypted local drafts, on-demand attachment downloads,
+and explicit plain-text sending. OAuth, full mailbox migration, updates, and
+mobile support remain roadmap work.
 
 ## How it works
 
@@ -60,16 +61,20 @@ The product architecture is built around a few core principles:
 - IMAP account setup with explicit SSL/TLS or STARTTLS and provider-issued app passwords
 - IMAP connection verification and remote folder discovery
 - on-demand, read-only indexing of up to the 200 newest messages per folder
-- text-only body retrieval; attachments are not downloaded, and body parts over 2 MiB are skipped
+- automatic sync retrieves message text only; body parts over 2 MiB are skipped, and attachments are downloaded separately only when requested
+- attachment metadata indexing and user-requested downloads up to 25 MiB, stored in the encrypted database and saved without automatic opening
 - local reading of synchronized message text without changing server read state
+- per-account plain-text draft save, edit, reopen, send, and delete in the encrypted database
 - explicit plain-text SMTP sending over certificate-validated SSL/TLS or STARTTLS
 - separate DPAPI-protected account secrets, bound to the current Windows user and account ID
 
-OAuth, HTML compose, attachments, drafts, import/export, incremental/full-history
-sync, automatic updates, and telemetry are not implemented. Sent messages are
-not stored in a local Sent folder; check the provider's Sent folder after sending.
-Synchronization is deliberately capped at 200 newest messages in each folder
-per request; it is not a complete mailbox migration or a production sync engine.
+OAuth, HTML compose, sending attachments, import/export, full-history sync,
+automatic updates, and telemetry are not implemented. IMAP sync is
+incremental after its initial window, but the first sync and UIDVALIDITY resets
+are capped at the 200 newest messages per folder; older history is not fetched.
+Sent messages are not stored in a local Sent folder; check the provider's Sent
+folder after sending. This is not a complete mailbox migration or a production
+sync engine.
 
 ## Roadmap
 
@@ -112,8 +117,19 @@ For the full plan, see [ROADMAP.md](ROADMAP.md).
 
 ## Installation
 
-There is no installer or production release yet. Build and run the Windows
-development app using the instructions below.
+Windows packages are built by the tagged-release workflow. Each release draft
+contains a **portable ZIP** and a **setup wizard**. The wizard installs the
+self-contained Windows x64 app per user by default, can be elevated for a
+machine-wide install, and leaves mail data in the current user's
+`%LOCALAPPDATA%\eMail MPC\data` directory when the app is upgraded or
+uninstalled. Review the draft release and its SHA-256 files before publishing
+it to users.
+
+The portable ZIP runs without installation and stores its profile in a `data`
+folder beside the executable. Its database key and account secrets are still
+protected with Windows DPAPI, so that profile can only be opened by the same
+Windows user on the same machine. Do not treat copying the ZIP or profile to a
+different Windows account as a migration or backup.
 
 To add an account, choose **Add account**, enter the provider's IMAP/SMTP server
 settings and a provider-issued app password, then choose **Verify and add**.
@@ -126,9 +142,14 @@ For generic IMAP accounts, obtain the correct server hostname and app password
 from the provider; the Gmail values shown in the form are only defaults.
 Select a search result to read its locally stored text. Choose a specific
 account and **Compose** to send a plain-text message through its configured
-SMTP endpoint. The app does not create drafts or save a local Sent copy, and a
-connection failure during sending can leave delivery status uncertain; check
-the provider's Sent folder before retrying.
+SMTP endpoint. Drafts are stored only when **Save draft** is selected; there is
+no automatic saving or local Sent copy. A connection failure during sending
+can leave delivery status uncertain; check the provider's Sent folder before
+retrying. Message attachments appear beneath
+the selected message; choose **Download** or **Save copy** to save one (maximum
+25 MiB). Files are never launched automatically. Use **Save draft** while
+composing to keep a draft in encrypted local storage; **Drafts** opens or
+deletes drafts for the selected account.
 
 ## Development
 
@@ -152,8 +173,10 @@ dotnet run --project src/EMailMPC.Desktop/EMailMPC.Desktop.csproj
 
 The application stores its encrypted database and DPAPI-protected account
 secrets in the current user's `%LOCALAPPDATA%\eMail MPC\data` directory.
-Back up any important messages independently; this development build does not
-provide an export, recovery key, or database restore workflow.
+Keep an independent copy of the user's data directory before testing this
+preview; an in-app backup and restore workflow is not yet available.
+Attachments saved to a path you choose are regular files outside the encrypted
+database.
 
 The current build initializes an encrypted local database, searches and reads
 locally synchronized mail, and can connect to compatible IMAP/SMTP servers
@@ -195,17 +218,17 @@ Before filing a report, include:
 
 ## License
 
-No license has been selected yet. No `LICENSE` file is present; do not assume
-the project is licensed for reuse or distribution.
+This project is distributed under the [MIT License](LICENSE).
 
 ## Project status
 
 The Windows .NET 10/WPF application shell is in active development. The current
 build initializes a SQLCipher-encrypted local database and a Windows DPAPI
-protected database key and has IMAP/SMTP app-password setup, bounded manual
-sync, local reading, and explicit plain-text sending. It does not support
-OAuth, full-history synchronization, or migration from eM Client. Do not rely
-on it as your only mail client or as a complete backup.
+protected database key and has IMAP/SMTP app-password setup, bounded
+incremental sync, local reading, on-demand attachment downloads, and explicit
+plain-text sending. It does not support OAuth, full-history synchronization,
+or migration from eM Client. Do not rely on it as your only mail client or as
+a complete backup.
 
 The roadmap prioritizes secure storage, account connectivity, synchronization,
 and data migration before broadening features or platforms.

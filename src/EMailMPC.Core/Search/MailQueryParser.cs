@@ -244,7 +244,12 @@ public static class MailQueryParser
 
         private bool AddKeyedTerm(QueryTerm term)
         {
-            switch (term.Key.ToLowerInvariant())
+            if (term.Key is not { } key)
+            {
+                return false;
+            }
+
+            switch (key.ToLowerInvariant())
             {
                 case "from":
                     if (!term.Negated)
@@ -265,7 +270,7 @@ public static class MailQueryParser
                     AddClause($"recipients : ({BuildPrefixClause(term.Value)})", negated: true);
                     return true;
                 case "subject" or "body":
-                    return AddColumnTerm(term, term.Key.Equals("subject", StringComparison.OrdinalIgnoreCase) ? "subject" : "body_text");
+                    return AddColumnTerm(term, key.Equals("subject", StringComparison.OrdinalIgnoreCase) ? "subject" : "body_text");
                 case "in":
                     if (term.Negated)
                     {
@@ -291,13 +296,13 @@ public static class MailQueryParser
                     if (term.Negated
                         || !TryParseDateValue(
                             term.Value,
-                            isBefore: term.Key.Equals("before", StringComparison.OrdinalIgnoreCase),
+                            isBefore: key.Equals("before", StringComparison.OrdinalIgnoreCase),
                             out var date))
                     {
                         return false;
                     }
 
-                    if (term.Key.Equals("after", StringComparison.OrdinalIgnoreCase))
+                    if (key.Equals("after", StringComparison.OrdinalIgnoreCase))
                     {
                         _after = date;
                     }
@@ -311,7 +316,7 @@ public static class MailQueryParser
                     // Keys eM Client supports but the local schema has no counterpart for.
                     return false;
                 default:
-                    var degraded = ExtractTokens($"{term.Key} {term.Value}");
+                    var degraded = ExtractTokens($"{key} {term.Value}");
                     if (degraded.Count > 0)
                     {
                         AddClause($"({string.Join(" AND ", degraded.Select(QuoteToken))})", term.Negated);
@@ -367,14 +372,19 @@ public static class MailQueryParser
 
         private bool AddStandaloneFlag(QueryTerm term)
         {
+            if (term.Key is not { } key)
+            {
+                return false;
+            }
+
             if (!TryParseBoolean(term.Value, out var value))
             {
                 return false;
             }
 
-            var truth = term.Key.Equals("unread", StringComparison.OrdinalIgnoreCase) ? !value : value;
+            var truth = key.Equals("unread", StringComparison.OrdinalIgnoreCase) ? !value : value;
             var effective = truth != term.Negated;
-            if (term.Key.Equals("flagged", StringComparison.OrdinalIgnoreCase))
+            if (key.Equals("flagged", StringComparison.OrdinalIgnoreCase))
             {
                 _isFlagged = effective;
             }

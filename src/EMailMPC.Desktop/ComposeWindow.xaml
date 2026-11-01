@@ -7,7 +7,6 @@
         MinWidth="620"
         MinHeight="520"
         WindowStartupLocation="CenterOwner"
-        Background="#F4F6F8"
         Closing="Window_Closing">
     <Grid Margin="24">
         <Grid.RowDefinitions>
@@ -19,10 +18,10 @@
             <TextBlock Text="New message"
                        FontSize="24"
                        FontWeight="SemiBold"
-                       Foreground="#17212B" />
+                       Foreground="{StaticResource InkBrush}" />
             <TextBlock x:Name="FromText"
                        Margin="0,6,0,0"
-                       Foreground="#536270" />
+                       Foreground="{StaticResource MutedBrush}" />
         </StackPanel>
 
         <Grid Grid.Row="1">
@@ -72,16 +71,21 @@
                         Padding="16,8"
                         Content="Cancel"
                         Click="CancelButton_Click" />
+                <Button x:Name="SaveDraftButton"
+                        Margin="0,0,8,0"
+                        Padding="16,8"
+                        Content="Save draft"
+                        Click="SaveDraftButton_Click" />
                 <Button x:Name="SendButton"
-                        Padding="18,8"
                         Content="Send email"
+                        Style="{StaticResource PrimaryButtonStyle}"
                         IsDefault="True"
                         Click="SendButton_Click" />
             </StackPanel>
             <TextBlock x:Name="StatusText"
                        VerticalAlignment="Center"
                        Margin="0,0,12,0"
-                       Foreground="#536270"
+                       Foreground="{StaticResource MutedBrush}"
                        TextWrapping="Wrap" />
         </DockPanel>
     </Grid>

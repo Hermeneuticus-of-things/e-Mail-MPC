@@ -29,6 +29,11 @@ def main():
     version = version_data.get('version')
     if not re.fullmatch(r'\d+\.\d+\.\d+', str(version)):
         raise SystemExit(f'Invalid version in version.json: {version!r}')
+    expected_version = os.environ.get('EXPECTED_RELEASE_VERSION')
+    if expected_version:
+        expected_version = expected_version.removeprefix('v')
+        if expected_version != version:
+            raise SystemExit(f'Release version {expected_version} does not match version.json {version}')
 
     manifest = read_json(MANIFEST_FILE)
     if manifest.get('version') != version:

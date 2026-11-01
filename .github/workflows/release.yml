@@ -23,42 +23,98 @@ jobs:
 
       - name: Validate version tag and source of truth
         run: |
-          python - <<'PY'
-import json, os, re, sys
-from pathlib import Path
-
-root = Path('.')
-version_file = root / 'version.json'
-with version_file.open('r', encoding='utf-8') as fh:
-    data = json.load(fh)
-version = data.get('version')
-if not re.fullmatch(r'\d+\.\d+\.\d+', str(version)):
-    raise SystemExit(f'Invalid version in version.json: {version!r}')
-ref = os.environ.get('GITHUB_REF_NAME', '')
-if ref:
-    tag_version = ref[1:] if ref.startswith('v') else ref
-    if tag_version != version:
-        raise SystemExit(f'Tag version {tag_version} does not match version.json {version}')
-print(f'Validated version: {version}')
-PY
+          version="$(jq -r '.version' version.json)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid version in version.json: $version"; exit 1; }
+          tag_version="${GITHUB_REF_NAME#v}"
+          [[ "$tag_version" == "$version" ]] || { echo "Tag version $tag_version does not match version.json $version"; exit 1; }
+          echo "Validated version: $version"
 
       - name: Ensure changelog entry exists
         run: |
           test -f CHANGELOG.md
           grep -q "## \[${GITHUB_REF_NAME#v}\]" CHANGELOG.md || echo "Warning: changelog entry for ${GITHUB_REF_NAME#v} not found; please update before release."
 
-  publish:
+  build-windows:
     needs: validate
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set release version
+        shell: pwsh
+        run: |
+          $version = (Get-Content version.json -Raw | ConvertFrom-Json).version
+          "APP_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Build and test
+        run: dotnet test EMailMPC.slnx --configuration Release --nologo
+
+      - name: Publish self-contained Windows x64 app
+        shell: pwsh
+        run: |
+          dotnet publish src/EMailMPC.Desktop/EMailMPC.Desktop.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            --output artifacts/publish
+
+      - name: Build portable package and setup wizard
+        shell: pwsh
+        run: |
+          $portable = Join-Path $PWD "artifacts/portable"
+          $output = Join-Path $PWD "artifacts"
+          New-Item -ItemType Directory -Force $portable | Out-Null
+          Copy-Item "artifacts/publish/*" $portable -Recurse -Force
+          Set-Content -Path (Join-Path $portable "portable.mode") -Value "portable" -NoNewline
+          Compress-Archive -Path (Join-Path $portable "*") -DestinationPath "$output/program.zip" -CompressionLevel Optimal
+          Copy-Item "$output/program.zip" "$output/program-$env:APP_VERSION.zip"
+
+          choco install innosetup --yes --no-progress
+          $env:APP_PUBLISH_DIR = Join-Path $PWD "artifacts/publish"
+          $env:APP_OUTPUT_DIR = $output
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "installer/eMailMPC.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed with exit code $LASTEXITCODE." }
+
+          $packages = Get-ChildItem $output -File | Where-Object { $_.Extension -in ".zip", ".exe" }
+          foreach ($file in $packages) {
+            $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            Set-Content -Path "$($file.FullName).sha256" -Value "$hash  $($file.Name)" -NoNewline
+          }
+
+      - name: Upload Windows release packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-packages
+          path: artifacts/*
+          if-no-files-found: error
+
+  publish:
+    needs: [validate, build-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Download Windows release packages
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release-packages
+          path: artifacts
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          files: artifacts/*
           generate_release_notes: true
-          draft: false
+          draft: true
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

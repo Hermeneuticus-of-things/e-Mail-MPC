@@ -21,6 +21,10 @@ This roadmap defines the product path from foundation to stable release. The seq
 - update flow verifies release assets before installation
 - rollback path is tested and documented
 
+### Current progress
+- Done: a Windows x64 self-contained build path, portable ZIP profile mode, and a per-user/elevated Inno Setup wizard that keeps application data outside the install directory.
+- Remaining: recovery and restore, update verification and rollback, installation testing across supported Windows configurations, and a tested data migration path.
+
 ## Milestone v0.2 — Core reliability
 
 ### Goals
@@ -31,14 +35,18 @@ This roadmap defines the product path from foundation to stable release. The seq
 ### Deliverables
 - IMAP account setup and TLS connection verification
 - bounded read-only manual mailbox sync
+- incremental IMAP sync with UIDVALIDITY recovery
 - local search index and account filtering
 - local reading of synchronized text and explicit plain-text SMTP sending
-- message draft creation and persistence
+- on-demand attachment download and explicit save-to-file
+- encrypted per-account message draft creation, editing, persistence and deletion
 
 ### Current progress
 - Done: IMAP/SMTP setup with app passwords, TLS-only connection options, remote-folder discovery, encrypted local storage, manual sync capped at 200 newest messages per folder, local reading, and explicit plain-text sending.
-- Done: eM Client style query language (keyed operators, phrases, negation, OR groups), switchable relevance (bm25) / date ranking, local natural-language query interpretation, and incremental IMAP sync (UIDVALIDITY + highest-UID tracking with flag refresh and expunge removal).
-- Remaining: provider-specific OAuth, attachment download and compose attachments, folder management, full-history synchronization, complete mailbox import/export, drafts, account removal UI, Sent-folder persistence, and recovery/backup.
+- Done: eM Client style query language (keyed operators, phrases, negation, OR groups), switchable relevance (bm25) / date ranking, local natural-language query interpretation, incremental IMAP sync (UIDVALIDITY + highest-UID tracking with flag refresh and expunge removal), and encrypted on-demand attachment download/save (25 MiB per file).
+- Done: manually saved encrypted per-account drafts with edit, reopen, send cleanup, delete, and schema migration coverage.
+- Done: Hallmark-inspired WPF mail workspace with account and folder filters, resizable message-list/reader panes, empty states, and confirmed account removal that preserves local messages, downloaded attachments, and drafts.
+- Remaining: provider-specific OAuth, compose attachments, folder management, full-history synchronization, complete mailbox import/export, Sent-folder persistence, and recovery/backup.
 
 ### Exit criteria
 - standard email workflows work reliably end-to-end

@@ -3,7 +3,6 @@ name: Update release manifest
 on:
   release:
     types: [published]
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,26 +11,42 @@ jobs:
   sync-manifest:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@v4
+        with:
+          ref: main
 
-      - name: Download release asset
+      - name: Download and verify published portable packages
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          mkdir -p dist
-          curl -L "${{ github.event.release.assets[0].browser_download_url || 'https://example.invalid/program.zip' }}" -o dist/program.zip || true
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          mkdir -p dist/versioned
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern program.zip --dir dist
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern program.zip.sha256 --dir dist
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "program-$version.zip" --dir dist/versioned
+          test -s dist/program.zip
+          test -s "dist/versioned/program-$version.zip"
+          (cd dist && sha256sum --check program.zip.sha256)
+          cmp --silent dist/program.zip "dist/versioned/program-$version.zip"
+          test "$(jq -r .version version.json)" = "$version"
 
       - name: Validate release metadata
         env:
           RELEASE_ARTIFACT_PATH: dist/program.zip
-        run: |
-          python scripts/validate_release.py
+          EXPECTED_RELEASE_VERSION: ${{ github.event.release.tag_name }}
+        run: python scripts/validate_release.py
 
       - name: Commit manifest update
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add release-manifest.json version.json
-          git diff --cached --quiet || git commit -m "chore: sync release manifest"
-          git push
+          git add release-manifest.json
+          if git diff --cached --quiet; then
+            echo "Manifest already matches the published asset."
+            exit 0
+          fi
+          git commit -m "chore: sync release manifest"
+          git push origin HEAD:main

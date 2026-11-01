@@ -62,6 +62,173 @@ public sealed class EncryptedMailDatabaseTests
     }
 
     [Fact]
+    public async Task StoresAttachmentMetadataAndEncryptedContentWithSizeLimit()
+    {
+        using var directory = new TemporaryDirectory();
+        var databasePath = Path.Combine(directory.Path, "mail.db");
+        var key = RandomNumberGenerator.GetBytes(32);
+        var message = CreateMessage("message-with-attachment", "Report", "See attached");
+        var attachment = new MailAttachmentRecord(
+            "attachment-1",
+            message.Id,
+            "2",
+            "report.pdf",
+            "application/pdf",
+            4,
+            "cid-1",
+            IsInline: false,
+            AttachmentContentState.NotDownloaded);
+        var content = new byte[] { 10, 20, 30, 40 };
+
+        using (var database = new EncryptedMailDatabase(databasePath, key))
+        {
+            database.Initialize();
+            await database.SaveMessageAsync(message);
+            await database.ReplaceMessageAttachmentsAsync(message.Id, [attachment]);
+
+            var storedMetadata = Assert.Single(await database.ListMessageAttachmentsAsync(message.Id));
+            Assert.Equal(attachment.Id, storedMetadata.Id);
+            Assert.Equal(AttachmentContentState.NotDownloaded, storedMetadata.ContentState);
+            Assert.Null(await database.GetAttachmentContentAsync(attachment.Id));
+
+            await database.SetAttachmentContentAsync(attachment.Id, content);
+            var downloadedMetadata = Assert.Single(await database.ListMessageAttachmentsAsync(message.Id));
+            Assert.Equal(AttachmentContentState.Downloaded, downloadedMetadata.ContentState);
+            Assert.Equal(content, await database.GetAttachmentContentAsync(attachment.Id));
+
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+                database.SetAttachmentContentAsync(
+                    attachment.Id,
+                    new byte[EncryptedMailDatabase.MaximumAttachmentBytes + 1]));
+            await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+                database.SetAttachmentContentAsync("missing-attachment", content));
+
+            await database.ReplaceMessageAttachmentsAsync(message.Id, [attachment]);
+            Assert.Null(await database.GetAttachmentContentAsync(attachment.Id));
+        }
+
+        var storedBytes = await File.ReadAllBytesAsync(databasePath);
+        Assert.DoesNotContain(content, storedBytes);
+    }
+
+    [Fact]
+    public async Task DraftsPersistEncryptedUpdatesAndSurviveAccountRemoval()
+    {
+        using var directory = new TemporaryDirectory();
+        var databasePath = Path.Combine(directory.Path, "mail.db");
+        var key = RandomNumberGenerator.GetBytes(32);
+        var account = CreateAccount("draft-account", "draft@example.com");
+        var firstDraft = new MailDraftRecord(
+            "draft-1",
+            account.Id,
+            "team@example.com",
+            "First subject",
+            "First body",
+            DateTimeOffset.Parse("2026-10-30T12:00:00Z"));
+
+        using (var database = new EncryptedMailDatabase(databasePath, key))
+        {
+            database.Initialize();
+            await database.SaveAccountAsync(account);
+            await database.SaveDraftAsync(firstDraft);
+            await database.SaveDraftAsync(firstDraft with
+            {
+                Subject = "Updated subject",
+                BodyText = "Updated body",
+                UpdatedAtUtc = firstDraft.UpdatedAtUtc.AddMinutes(1)
+            });
+
+            var storedDraft = Assert.Single(await database.ListDraftsAsync(account.Id));
+            Assert.Equal("Updated subject", storedDraft.Subject);
+            Assert.Equal("Updated body", storedDraft.BodyText);
+            Assert.Equal(storedDraft, await database.GetDraftAsync(storedDraft.Id));
+
+            await database.DeleteAccountAsync(account.Id);
+            var preservedDraft = Assert.Single(await database.ListDraftsAsync());
+            Assert.Null(preservedDraft.AccountId);
+            Assert.Equal("Updated body", preservedDraft.BodyText);
+            await database.DeleteDraftAsync(preservedDraft.Id);
+            Assert.Empty(await database.ListDraftsAsync());
+        }
+
+        var storedBytes = await File.ReadAllBytesAsync(databasePath);
+        var storedText = System.Text.Encoding.UTF8.GetString(storedBytes);
+        Assert.DoesNotContain("Updated subject", storedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Updated body", storedText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MigratesVersionFourDatabaseToLatestMailSchema()
+    {
+        using var directory = new TemporaryDirectory();
+        var databasePath = Path.Combine(directory.Path, "mail.db");
+        var key = RandomNumberGenerator.GetBytes(32);
+        var account = CreateAccount("migration-account", "migration@example.com");
+        var folder = new MailFolderRecord(
+            "migration-folder",
+            account.Id,
+            "INBOX",
+            "Inbox",
+            "INBOX",
+            null,
+            "inbox");
+        using (var database = new EncryptedMailDatabase(databasePath, key))
+        {
+            database.Initialize();
+            await database.SaveAccountAsync(account, [folder]);
+            await database.SaveMessageAsync(CreateMessage("pre-attachment-schema", "Existing mail", "Preserve this body"));
+            await database.SetFolderSyncStateAsync(new FolderSyncStateRecord(account.Id, account.Id, 41, 5));
+        }
+
+        SQLitePCL.Batteries_V2.Init();
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+               {
+                   DataSource = databasePath,
+                   Pooling = false
+               }.ToString()))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                PRAGMA key = "x'{Convert.ToHexString(key)}'";
+                DROP TABLE attachments;
+                DROP TABLE mail_drafts;
+                PRAGMA user_version = 4;
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        using var migrated = new EncryptedMailDatabase(databasePath, key);
+        migrated.Initialize();
+
+        var preserved = await migrated.GetMessageAsync("pre-attachment-schema");
+        Assert.NotNull(preserved);
+        Assert.Equal("Preserve this body", preserved.BodyText);
+        Assert.Null(await migrated.GetFolderSyncStateAsync(account.Id, account.Id));
+        await migrated.ReplaceMessageAttachmentsAsync(
+            preserved.Id,
+            [new MailAttachmentRecord(
+                "migrated-attachment",
+                preserved.Id,
+                "2",
+                "report.pdf",
+                "application/pdf",
+                0,
+                null,
+                false,
+                AttachmentContentState.NotDownloaded)]);
+        Assert.Single(await migrated.ListMessageAttachmentsAsync(preserved.Id));
+        await migrated.SaveDraftAsync(new MailDraftRecord(
+            "migrated-draft",
+            account.Id,
+            string.Empty,
+            string.Empty,
+            "Drafts are available after migration.",
+            DateTimeOffset.UtcNow));
+        Assert.Single(await migrated.ListDraftsAsync(account.Id));
+    }
+
+    [Fact]
     public async Task SearchAppliesTextFiltersAndDateBounds()
     {
         using var directory = new TemporaryDirectory();
@@ -150,7 +317,7 @@ public sealed class EncryptedMailDatabaseTests
     }
 
     [Fact]
-    public async Task DeletingAccountKeepsLocalMessagesAndRemovesItsFolders()
+    public async Task DeletingAccountKeepsLocalMessagesAndAttachmentsAndRemovesItsFolders()
     {
         using var directory = new TemporaryDirectory();
         var key = RandomNumberGenerator.GetBytes(32);
@@ -160,7 +327,21 @@ public sealed class EncryptedMailDatabaseTests
         await database.SaveAccountAsync(account, [
             new MailFolderRecord("folder-1", account.Id, "remote-inbox", "Inbox", "Inbox", null, "inbox")
         ]);
-        await database.SaveMessageAsync(CreateMessage("message-1", "Preserve local mail", "Keep this locally", accountId: account.Id));
+        var message = CreateMessage("message-1", "Preserve local mail", "Keep this locally", accountId: account.Id);
+        await database.SaveMessageAsync(message);
+        var attachment = new MailAttachmentRecord(
+            "attachment-1",
+            message.Id,
+            "2",
+            "preserved.pdf",
+            "application/pdf",
+            4,
+            null,
+            IsInline: false,
+            AttachmentContentState.NotDownloaded);
+        await database.ReplaceMessageAttachmentsAsync(message.Id, [attachment]);
+        var attachmentContent = new byte[] { 10, 20, 30, 40 };
+        await database.SetAttachmentContentAsync(attachment.Id, attachmentContent);
 
         await database.DeleteAccountAsync(account.Id);
 
@@ -169,6 +350,7 @@ public sealed class EncryptedMailDatabaseTests
         var preserved = await database.SearchAsync(new SearchCriteria(text: "preserve"));
         Assert.Equal("message-1", Assert.Single(preserved).Id);
         Assert.Null(preserved[0].AccountId);
+        Assert.Equal(attachmentContent, await database.GetAttachmentContentAsync(attachment.Id));
     }
 
     [Fact]

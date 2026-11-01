@@ -19,10 +19,13 @@ public partial class App : Application
 
         try
         {
-            var dataDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "eMail MPC",
-                "data");
+            var dataDirectory = File.Exists(Path.Combine(AppContext.BaseDirectory, "portable.mode"))
+                ? Path.Combine(AppContext.BaseDirectory, "data")
+                : Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "eMail MPC",
+                    "data");
+            Directory.CreateDirectory(dataDirectory);
             var keyPath = Path.Combine(dataDirectory, "keys", "database.dpapi");
             var databasePath = Path.Combine(dataDirectory, "mail.db");
             var secretsDirectory = Path.Combine(dataDirectory, "keys", "accounts");

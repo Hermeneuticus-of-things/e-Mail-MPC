@@ -8,7 +8,6 @@
         MinHeight="650"
         ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner"
-        Background="#F4F6F8"
         Closing="Window_Closing">
     <Grid Margin="24">
         <Grid.RowDefinitions>
@@ -21,7 +20,7 @@
             <TextBlock Text="Connect an email account"
                        FontSize="24"
                        FontWeight="SemiBold"
-                       Foreground="#17212B" />
+                       Foreground="{StaticResource InkBrush}" />
             <TextBlock Margin="0,7,0,0"
                        Text="Uses IMAP over verified TLS. Enter a provider-issued app password; your normal account password is not recommended."
                        Foreground="#536270"
@@ -51,9 +50,9 @@
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,10"
-                           Text="ACCOUNT"
+                           Text="Account"
                            FontWeight="SemiBold"
-                           Foreground="#26734D" />
+                           Foreground="{StaticResource InkBrush}" />
                 <TextBlock Grid.Row="1" Text="Email address" VerticalAlignment="Center" Margin="0,0,8,10" />
                 <TextBox x:Name="EmailBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
                          Margin="0,0,0,10" Padding="8" AutomationProperties.Name="Email address" />
@@ -65,9 +64,9 @@
                              Margin="0,0,0,10" Padding="8" AutomationProperties.Name="App password" />
 
                 <TextBlock Grid.Row="4" Grid.ColumnSpan="3" Margin="0,14,0,10"
-                           Text="INCOMING MAIL (IMAP)"
+                           Text="Incoming mail (IMAP)"
                            FontWeight="SemiBold"
-                           Foreground="#26734D" />
+                           Foreground="{StaticResource InkBrush}" />
                 <TextBlock Grid.Row="5" Text="Server" VerticalAlignment="Center" Margin="0,0,8,10" />
                 <TextBox x:Name="ImapHostBox" Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2"
                          Margin="0,0,0,10" Padding="8" Text="imap.gmail.com" />
@@ -81,9 +80,9 @@
                 </ComboBox>
 
                 <TextBlock Grid.Row="7" Grid.ColumnSpan="3" Margin="0,14,0,10"
-                           Text="OUTGOING MAIL (SMTP)"
+                           Text="Outgoing mail (SMTP)"
                            FontWeight="SemiBold"
-                           Foreground="#26734D" />
+                           Foreground="{StaticResource InkBrush}" />
                 <TextBlock Grid.Row="8" Text="Server" VerticalAlignment="Center" Margin="0,0,8,10" />
                 <TextBox x:Name="SmtpHostBox" Grid.Row="8" Grid.Column="1" Grid.ColumnSpan="2"
                          Margin="0,0,0,10" Padding="8" Text="smtp.gmail.com" />
@@ -97,7 +96,7 @@
                 </ComboBox>
 
                 <TextBlock Grid.Row="10" Grid.ColumnSpan="3" Margin="0,14,0,4"
-                           Text="Only IMAP connectivity and folder discovery are tested here. SMTP sending is not yet available."
+                           Text="IMAP and SMTP use verified TLS. SMTP is used only when you choose Send email."
                            FontSize="12"
                            Foreground="#697783"
                            TextWrapping="Wrap" />
@@ -114,7 +113,7 @@
             <TextBlock x:Name="StatusText"
                        VerticalAlignment="Center"
                        Margin="0,0,12,0"
-                       Foreground="#536270"
+                       Foreground="{StaticResource MutedBrush}"
                        TextWrapping="Wrap" />
         </DockPanel>
     </Grid>

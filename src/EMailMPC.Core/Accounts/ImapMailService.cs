@@ -1,4 +1,6 @@
 using EMailMPC.Core.Storage;
+using System.Security.Cryptography;
+using System.Text;
 using MailKit;
 using MailKit.Net.Imap;
 using MailKit.Security;
@@ -97,9 +99,7 @@ public sealed class ImapMailService(EncryptedMailDatabase database, Func<IImapSy
                 }
 
                 var newest = await client.FetchNewestAsync(folderRecord.RemoteId, MessagesPerFolderLimit, cancellationToken).ConfigureAwait(false);
-                await database.SaveMessagesAsync(
-                    newest.Select(message => ToRecord(account.Id, folderId, folderRecord.FullName, message)).ToList(),
-                    cancellationToken).ConfigureAwait(false);
+                await SaveMessagesAsync(account.Id, folderId, folderRecord.FullName, newest, cancellationToken).ConfigureAwait(false);
                 highestUid = newest.Count == 0 ? 0 : newest.Max(message => message.Uid);
                 folderNewMessages = newest.Count;
                 resyncedFolder = true;
@@ -111,9 +111,7 @@ public sealed class ImapMailService(EncryptedMailDatabase database, Func<IImapSy
                     state.HighestUid + 1,
                     uint.MaxValue,
                     cancellationToken).ConfigureAwait(false);
-                await database.SaveMessagesAsync(
-                    arrived.Select(message => ToRecord(account.Id, folderId, folderRecord.FullName, message)).ToList(),
-                    cancellationToken).ConfigureAwait(false);
+                await SaveMessagesAsync(account.Id, folderId, folderRecord.FullName, arrived, cancellationToken).ConfigureAwait(false);
                 highestUid = arrived.Count == 0 ? state.HighestUid : Math.Max(state.HighestUid, arrived.Max(message => message.Uid));
                 folderNewMessages = arrived.Count;
 
@@ -150,6 +148,64 @@ public sealed class ImapMailService(EncryptedMailDatabase database, Func<IImapSy
             updatedFlagCount,
             deletedMessageCount,
             resyncedFolderCount);
+    }
+
+    public async Task<byte[]> DownloadAttachmentAsync(
+        MailAccountRecord account,
+        string password,
+        MailFolderRecord folder,
+        uint uid,
+        MailAttachmentRecord attachment,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        ArgumentException.ThrowIfNullOrWhiteSpace(password);
+        ArgumentNullException.ThrowIfNull(folder);
+        ArgumentNullException.ThrowIfNull(attachment);
+        if (!string.Equals(folder.AccountId, account.Id, StringComparison.Ordinal) ||
+            attachment.SizeBytes > EncryptedMailDatabase.MaximumAttachmentBytes)
+        {
+            throw new InvalidDataException(
+                $"The attachment exceeds the {EncryptedMailDatabase.MaximumAttachmentBytes / (1024 * 1024)} MiB download limit or belongs to another account.");
+        }
+
+        var folderId = GetFolderId(account.Id, folder.FullName);
+        var expectedMessageId = $"{account.Id}:{folderId}:{uid}";
+        if (!string.Equals(attachment.MessageId, expectedMessageId, StringComparison.Ordinal) ||
+            !string.Equals(
+                attachment.Id,
+                GetAttachmentId(expectedMessageId, attachment.PartSpecifier),
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The selected attachment does not belong to this IMAP message.", nameof(attachment));
+        }
+
+        EnsureSupportedAuthentication(account);
+        using var client = clientFactory is not null ? clientFactory() : new MailKitImapSyncClient();
+        await client.ConnectAsync(account, password, cancellationToken).ConfigureAwait(false);
+        var content = await client.DownloadAttachmentAsync(
+            folder.RemoteId,
+            uid,
+            attachment.PartSpecifier,
+            cancellationToken).ConfigureAwait(false);
+        if (content.Length > EncryptedMailDatabase.MaximumAttachmentBytes)
+        {
+            CryptographicOperations.ZeroMemory(content);
+            throw new InvalidDataException(
+                $"The downloaded attachment exceeds the {EncryptedMailDatabase.MaximumAttachmentBytes / (1024 * 1024)} MiB limit.");
+        }
+
+        try
+        {
+            await database.SetAttachmentContentAsync(attachment.Id, content, cancellationToken).ConfigureAwait(false);
+            await client.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+            return content;
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(content);
+            throw;
+        }
     }
 
     /// <summary>
@@ -258,6 +314,44 @@ public sealed class ImapMailService(EncryptedMailDatabase database, Func<IImapSy
             message.IsFlagged,
             message.HasAttachments,
             accountId);
+    }
+
+    private async Task SaveMessagesAsync(
+        string accountId,
+        string folderId,
+        string folderName,
+        IReadOnlyList<ImapRemoteMessage> remoteMessages,
+        CancellationToken cancellationToken)
+    {
+        var messages = remoteMessages
+            .Select(message => ToRecord(accountId, folderId, folderName, message))
+            .ToArray();
+        await database.SaveMessagesAsync(messages, cancellationToken).ConfigureAwait(false);
+
+        foreach (var remoteMessage in remoteMessages)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var messageId = $"{accountId}:{folderId}:{remoteMessage.Uid}";
+            var attachments = (remoteMessage.Attachments ?? [])
+                .Select(attachment => new MailAttachmentRecord(
+                    GetAttachmentId(messageId, attachment.PartSpecifier),
+                    messageId,
+                    attachment.PartSpecifier,
+                    attachment.FileName,
+                    attachment.ContentType,
+                    attachment.SizeBytes,
+                    attachment.ContentId,
+                    attachment.IsInline,
+                    AttachmentContentState.NotDownloaded))
+                .ToArray();
+            await database.ReplaceMessageAttachmentsAsync(messageId, attachments, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static string GetAttachmentId(string messageId, string partSpecifier)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(partSpecifier)));
+        return $"{messageId}:attachment:{hash}";
     }
 
     private static uint? TryParseUid(string id)

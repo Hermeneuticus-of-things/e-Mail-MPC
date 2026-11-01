@@ -10,7 +10,8 @@ namespace EMailMPC.Core.Storage;
 
 public sealed class EncryptedMailDatabase : IDisposable
 {
-    private const int CurrentSchemaVersion = 4;
+    public const int MaximumAttachmentBytes = 25 * 1024 * 1024;
+    private const int CurrentSchemaVersion = 6;
     private static readonly Regex SearchTokenPattern = new(@"[\p{L}\p{M}\p{N}]+", RegexOptions.Compiled);
     private static readonly object ProviderLock = new();
     private static bool _providerInitialized;
@@ -270,6 +271,131 @@ public sealed class EncryptedMailDatabase : IDisposable
     {
         ArgumentNullException.ThrowIfNull(message);
         await SaveMessagesAsync([message], cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task SaveDraftAsync(MailDraftRecord draft, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(draft);
+        if (string.IsNullOrWhiteSpace(draft.Id) ||
+            draft.Id.Length > 128 ||
+            draft.Recipients is null ||
+            draft.Subject is null ||
+            draft.BodyText is null ||
+            draft.Recipients.Length > 4096 ||
+            draft.Subject.Length > 998 ||
+            draft.BodyText.Length > 1_048_576 ||
+            draft.Subject.Contains('\0') ||
+            draft.BodyText.Contains('\0'))
+        {
+            throw new ArgumentException("Draft fields are invalid or exceed supported limits.", nameof(draft));
+        }
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO mail_drafts (id, account_id, recipients, subject, body_text, updated_at_utc)
+            VALUES ($id, $accountId, $recipients, $subject, $body, $updated)
+            ON CONFLICT(id) DO UPDATE SET
+                account_id = excluded.account_id,
+                recipients = excluded.recipients,
+                subject = excluded.subject,
+                body_text = excluded.body_text,
+                updated_at_utc = excluded.updated_at_utc;
+            """;
+        command.Parameters.AddWithValue("$id", draft.Id);
+        command.Parameters.AddWithValue("$accountId", (object?)draft.AccountId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$recipients", draft.Recipients);
+        command.Parameters.AddWithValue("$subject", draft.Subject);
+        command.Parameters.AddWithValue("$body", draft.BodyText);
+        command.Parameters.AddWithValue(
+            "$updated",
+            draft.UpdatedAtUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<MailDraftRecord>> ListDraftsAsync(
+        string? accountId = null,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (limit is < 1 or > 1000)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Draft limits must be between 1 and 1000.");
+        }
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, account_id, recipients, subject, body_text, updated_at_utc
+            FROM mail_drafts
+            WHERE ($accountId IS NULL OR account_id = $accountId)
+            ORDER BY updated_at_utc DESC, id ASC
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$accountId", (object?)accountId?.Trim() ?? DBNull.Value);
+        command.Parameters.AddWithValue("$limit", limit);
+        var drafts = new List<MailDraftRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            drafts.Add(new MailDraftRecord(
+                reader.GetString(0),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)));
+        }
+
+        return drafts;
+    }
+
+    public async Task<MailDraftRecord?> GetDraftAsync(
+        string id,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, account_id, recipients, subject, body_text, updated_at_utc
+            FROM mail_drafts
+            WHERE id = $id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$id", id.Trim());
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return new MailDraftRecord(
+            reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.GetString(2),
+            reader.GetString(3),
+            reader.GetString(4),
+            DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind));
+    }
+
+    public async Task DeleteDraftAsync(string id, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM mail_drafts WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", id.Trim());
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task SaveMessagesAsync(
@@ -647,6 +773,159 @@ public sealed class EncryptedMailDatabase : IDisposable
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task ReplaceMessageAttachmentsAsync(
+        string messageId,
+        IReadOnlyList<MailAttachmentRecord> attachments,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+        ArgumentNullException.ThrowIfNull(attachments);
+        if (attachments.Count > 100)
+        {
+            throw new ArgumentOutOfRangeException(nameof(attachments), "A message cannot contain more than 100 attachments.");
+        }
+
+        foreach (var attachment in attachments)
+        {
+            ArgumentNullException.ThrowIfNull(attachment);
+            if (string.IsNullOrWhiteSpace(attachment.Id) ||
+                string.IsNullOrWhiteSpace(attachment.PartSpecifier) ||
+                string.IsNullOrWhiteSpace(attachment.FileName) ||
+                string.IsNullOrWhiteSpace(attachment.ContentType) ||
+                attachment.Id.Length > 4096 ||
+                attachment.PartSpecifier.Length > 256 ||
+                attachment.FileName.Length > 1024 ||
+                attachment.ContentType.Length > 256 ||
+                attachment.ContentId?.Length > 1024 ||
+                attachment.SizeBytes < 0)
+            {
+                throw new ArgumentException("Attachment metadata is invalid or exceeds supported limits.", nameof(attachments));
+            }
+        }
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var delete = connection.CreateCommand();
+        delete.Transaction = (SqliteTransaction)transaction;
+        delete.CommandText = "DELETE FROM attachments WHERE message_id = $messageId;";
+        delete.Parameters.AddWithValue("$messageId", messageId);
+        await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var attachment in attachments)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = """
+                INSERT INTO attachments
+                    (id, message_id, part_specifier, filename, content_type, size_bytes, content_id, is_inline, content_state, content)
+                VALUES
+                    ($id, $messageId, $partSpecifier, $filename, $contentType, $sizeBytes, $contentId, $isInline, 'NotDownloaded', NULL);
+                """;
+            command.Parameters.AddWithValue("$id", attachment.Id);
+            command.Parameters.AddWithValue("$messageId", messageId);
+            command.Parameters.AddWithValue("$partSpecifier", attachment.PartSpecifier);
+            command.Parameters.AddWithValue("$filename", attachment.FileName);
+            command.Parameters.AddWithValue("$contentType", attachment.ContentType);
+            command.Parameters.AddWithValue("$sizeBytes", attachment.SizeBytes);
+            command.Parameters.AddWithValue("$contentId", (object?)attachment.ContentId ?? DBNull.Value);
+            command.Parameters.AddWithValue("$isInline", attachment.IsInline ? 1 : 0);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<MailAttachmentRecord>> ListMessageAttachmentsAsync(
+        string messageId,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, message_id, part_specifier, filename, content_type, size_bytes, content_id, is_inline, content_state
+            FROM attachments
+            WHERE message_id = $messageId
+            ORDER BY id;
+            """;
+        command.Parameters.AddWithValue("$messageId", messageId);
+        var attachments = new List<MailAttachmentRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            attachments.Add(new MailAttachmentRecord(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.GetInt64(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6),
+                reader.GetBoolean(7),
+                ParseContentState(reader.GetString(8))));
+        }
+
+        return attachments;
+    }
+
+    public async Task SetAttachmentContentAsync(string id, byte[] content, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        ArgumentNullException.ThrowIfNull(content);
+        if (content.Length > MaximumAttachmentBytes)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(content),
+                $"Attachments larger than {MaximumAttachmentBytes / (1024 * 1024)} MiB cannot be stored locally.");
+        }
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE attachments
+            SET content = $content, content_state = 'Downloaded', size_bytes = $sizeBytes
+            WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$content", content);
+        command.Parameters.AddWithValue("$sizeBytes", (long)content.Length);
+        if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+        {
+            throw new KeyNotFoundException("The attachment does not exist in the local database.");
+        }
+    }
+
+    public async Task<byte[]?> GetAttachmentContentAsync(string id, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT content FROM attachments WHERE id = $id AND content_state = 'Downloaded' LIMIT 1;";
+        command.Parameters.AddWithValue("$id", id);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is byte[] content ? content : null;
+    }
+
+    private static AttachmentContentState ParseContentState(string value)
+    {
+        if (Enum.TryParse<AttachmentContentState>(value, out var state) && Enum.IsDefined(state))
+        {
+            return state;
+        }
+
+        throw new InvalidDataException($"The stored attachment content state '{value}' is not supported.");
+    }
+
     public async Task<MailMessageRecord?> GetMessageAsync(
         string id,
         CancellationToken cancellationToken = default)
@@ -893,8 +1172,42 @@ public sealed class EncryptedMailDatabase : IDisposable
                 PRIMARY KEY(account_id, folder_id)
             );
 
-            PRAGMA user_version = 4;
+            CREATE TABLE IF NOT EXISTS attachments (
+                id TEXT NOT NULL PRIMARY KEY,
+                message_id TEXT NOT NULL REFERENCES mail_messages(id) ON DELETE CASCADE,
+                part_specifier TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+                content_id TEXT,
+                is_inline INTEGER NOT NULL CHECK (is_inline IN (0, 1)),
+                content_state TEXT NOT NULL CHECK (content_state IN ('NotDownloaded', 'Downloaded')),
+                content BLOB,
+                UNIQUE(message_id, part_specifier)
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_attachments_message ON attachments(message_id);
+
+            CREATE TABLE IF NOT EXISTS mail_drafts (
+                id TEXT NOT NULL PRIMARY KEY,
+                account_id TEXT REFERENCES mail_accounts(id) ON DELETE SET NULL,
+                recipients TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                body_text TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_mail_drafts_account_updated
+                ON mail_drafts(account_id, updated_at_utc DESC);
             """;
+        command.ExecuteNonQuery();
+        if (version < 5)
+        {
+            command.CommandText = "DELETE FROM folder_sync_state;";
+            command.ExecuteNonQuery();
+        }
+
+        command.CommandText = $"PRAGMA user_version = {CurrentSchemaVersion};";
         command.ExecuteNonQuery();
         transaction.Commit();
     }
@@ -1092,6 +1405,31 @@ public sealed record MailMessageFlagsRecord(
     bool IsRead,
     bool IsFlagged,
     bool HasAttachments);
+
+public enum AttachmentContentState
+{
+    NotDownloaded = 0,
+    Downloaded = 1,
+}
+
+public sealed record MailAttachmentRecord(
+    string Id,
+    string MessageId,
+    string PartSpecifier,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    string? ContentId,
+    bool IsInline,
+    AttachmentContentState ContentState);
+
+public sealed record MailDraftRecord(
+    string Id,
+    string? AccountId,
+    string Recipients,
+    string Subject,
+    string BodyText,
+    DateTimeOffset UpdatedAtUtc);
 
 public sealed record MailAccountRecord(
     string Id,

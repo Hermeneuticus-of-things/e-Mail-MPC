@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  core-tests-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test core library
+        run: dotnet test tests/EMailMPC.Core.Tests/EMailMPC.Core.Tests.csproj --configuration Release --nologo
+
+  windows-build-and-packages:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Read release version
+        shell: pwsh
+        run: |
+          $version = (Get-Content version.json -Raw | ConvertFrom-Json).version
+          "APP_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Build and test
+        run: dotnet test EMailMPC.slnx --configuration Release --nologo
+
+      - name: Publish self-contained Windows x64 app
+        shell: pwsh
+        run: |
+          dotnet publish src/EMailMPC.Desktop/EMailMPC.Desktop.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            --output artifacts/publish
+
+      - name: Package portable app and setup wizard
+        shell: pwsh
+        run: |
+          $portable = Join-Path $PWD "artifacts/portable"
+          $output = Join-Path $PWD "artifacts"
+          New-Item -ItemType Directory -Force $portable | Out-Null
+          Copy-Item "artifacts/publish/*" $portable -Recurse -Force
+          Set-Content -Path (Join-Path $portable "portable.mode") -Value "portable" -NoNewline
+          Compress-Archive -Path (Join-Path $portable "*") -DestinationPath "$output/eMail-MPC-$env:APP_VERSION-windows-x64-portable.zip"
+
+          choco install innosetup --yes --no-progress
+          $env:APP_PUBLISH_DIR = Join-Path $PWD "artifacts/publish"
+          $env:APP_OUTPUT_DIR = $output
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "installer/eMailMPC.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed with exit code $LASTEXITCODE." }
+
+          $packages = Get-ChildItem $output -File | Where-Object { $_.Extension -in ".zip", ".exe" }
+          foreach ($file in $packages) {
+            $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            Set-Content -Path "$($file.FullName).sha256" -Value "$hash  $($file.Name)" -NoNewline
+          }
+
+      - name: Upload packages for installation testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-install-test-packages
+          path: |
+            artifacts/eMail-MPC-*-windows-x64-portable.zip
+            artifacts/eMail-MPC-*-windows-x64-setup.exe
+            artifacts/*.sha256
+          if-no-files-found: error

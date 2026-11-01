@@ -18,7 +18,16 @@ public sealed record ImapRemoteMessage(
     bool IsRead,
     bool IsFlagged,
     bool HasAttachments,
-    string BodyText = "");
+    string BodyText = "",
+    IReadOnlyList<ImapRemoteAttachment>? Attachments = null);
+
+public sealed record ImapRemoteAttachment(
+    string PartSpecifier,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    string? ContentId,
+    bool IsInline);
 
 /// <summary>Snapshot of a remote folder right after opening it.</summary>
 public sealed record ImapFolderSnapshot(int MessageCount, uint UidValidity);
@@ -49,6 +58,12 @@ public interface IImapSyncClient : IDisposable
     /// [<paramref name="fromUid"/>, <paramref name="toUid"/>]; absent UIDs were expunged server-side.
     /// </summary>
     Task<IReadOnlyList<ImapRemoteMessage>> FetchFlagsAsync(string remoteId, uint fromUid, uint toUid, CancellationToken cancellationToken);
+
+    Task<byte[]> DownloadAttachmentAsync(
+        string remoteId,
+        uint uid,
+        string partSpecifier,
+        CancellationToken cancellationToken);
 
     Task DisconnectAsync(CancellationToken cancellationToken);
 }
@@ -161,6 +176,42 @@ public sealed class MailKitImapSyncClient : IImapSyncClient
         return await ToRemoteMessagesAsync(folder, summaries, includeBody: false, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<byte[]> DownloadAttachmentAsync(
+        string remoteId,
+        uint uid,
+        string partSpecifier,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(partSpecifier);
+        var folder = await GetFolderAsync(remoteId, cancellationToken).ConfigureAwait(false);
+        var summaries = await folder.FetchAsync(
+            new UniqueIdRange(new UniqueId(uid), new UniqueId(uid)),
+            new FetchRequest(MessageSummaryItems.UniqueId | MessageSummaryItems.BodyStructure),
+            cancellationToken).ConfigureAwait(false);
+        var bodyPart = summaries
+            .SelectMany(summary => summary.Attachments)
+            .FirstOrDefault(attachment =>
+                string.Equals(attachment.PartSpecifier, partSpecifier, StringComparison.Ordinal));
+        if (bodyPart is null || bodyPart.Octets > EncryptedMailDatabase.MaximumAttachmentBytes)
+        {
+            throw new InvalidDataException(
+                $"The attachment was not found or exceeds the {EncryptedMailDatabase.MaximumAttachmentBytes / (1024 * 1024)} MiB download limit.");
+        }
+
+        var entity = await folder.GetBodyPartAsync(
+            new UniqueId(uid),
+            bodyPart,
+            cancellationToken).ConfigureAwait(false);
+        if (entity is not MimePart { Content: not null } part)
+        {
+            throw new InvalidDataException("The selected MIME part is not a downloadable file attachment.");
+        }
+
+        using var output = new BoundedMemoryStream(EncryptedMailDatabase.MaximumAttachmentBytes);
+        await part.Content.DecodeToAsync(output, cancellationToken).ConfigureAwait(false);
+        return output.ToArray();
+    }
+
     public async Task DisconnectAsync(CancellationToken cancellationToken)
     {
         if (_client is not null)
@@ -242,7 +293,17 @@ public sealed class MailKitImapSyncClient : IImapSyncClient
                 summary.Flags?.HasFlag(MessageFlags.Seen) ?? false,
                 summary.Flags?.HasFlag(MessageFlags.Flagged) ?? false,
                 summary.Attachments.Any(),
-                body));
+                body,
+                summary.Attachments.Select(attachment => new ImapRemoteAttachment(
+                    attachment.PartSpecifier,
+                    string.IsNullOrWhiteSpace(attachment.FileName) ? "attachment" : attachment.FileName,
+                    attachment.ContentType.MimeType,
+                    attachment.Octets,
+                    attachment.ContentId,
+                    string.Equals(
+                        attachment.ContentDisposition?.Disposition,
+                        ContentDisposition.Inline,
+                        StringComparison.OrdinalIgnoreCase))).ToArray()));
         }
 
         return messages;
@@ -290,5 +351,63 @@ public sealed class MailKitImapSyncClient : IImapSyncClient
 
         var withSpacing = Regex.Replace(html, @"</(p|div|br|li|tr|h[1-6])\s*>", " ", RegexOptions.IgnoreCase);
         return WebUtility.HtmlDecode(HtmlTagPattern.Replace(withSpacing, " ")).Trim();
+    }
+
+    private sealed class BoundedMemoryStream(int maximumLength) : MemoryStream
+    {
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            EnsureWithinLimit(count);
+            base.Write(buffer, offset, count);
+        }
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            EnsureWithinLimit(buffer.Length);
+            base.Write(buffer);
+        }
+
+        public override void WriteByte(byte value)
+        {
+            EnsureWithinLimit(1);
+            base.WriteByte(value);
+        }
+
+        public override Task WriteAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+        {
+            EnsureWithinLimit(count);
+            return base.WriteAsync(buffer, offset, count, cancellationToken);
+        }
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureWithinLimit(buffer.Length);
+            return base.WriteAsync(buffer, cancellationToken);
+        }
+
+        public override void SetLength(long value)
+        {
+            if (value > maximumLength)
+            {
+                EnsureWithinLimit(maximumLength + 1);
+            }
+
+            base.SetLength(value);
+        }
+
+        private void EnsureWithinLimit(int length)
+        {
+            if (length < 0 || Length + length > maximumLength)
+            {
+                throw new InvalidDataException(
+                    $"The decoded attachment exceeds the {maximumLength / (1024 * 1024)} MiB download limit.");
+            }
+        }
     }
 }

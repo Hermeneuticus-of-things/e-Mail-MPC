@@ -32,6 +32,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - relevance ranking for full-text search results via FTS5 bm25 with a newest-first/relevance sort switch in the desktop UI and per-result relevance scores
 - local natural-language query interpretation (Romanian and English patterns) producing an editable query plan shown in the desktop UI, with a safe literal fallback when nothing is recognized
 - incremental IMAP synchronization: per-folder UIDVALIDITY and highest-UID tracking (schema v4), UID-range fetch for new mail only, bounded flag refresh with removal of server-expunged messages, and automatic bounded resync when UIDVALIDITY changes
+- schema v5 attachment metadata and encrypted attachment-content storage, with on-demand IMAP downloads capped at 25 MiB and explicit save-to-file UI
+- schema v4-to-v5 migration coverage and attachment ownership/content-size tests
+- schema v6 encrypted per-account drafts with save, reopen, delete and send cleanup workflows
+- Hallmark-inspired WPF mail workspace with account and folder filtering, a resizable message reader, explicit empty states, and account removal that preserves local mail and drafts
+- Windows x64 self-contained publishing, portable-profile mode, and an Inno Setup wizard with per-user and elevated installation options
+- migration coverage for schema v4 to the latest database schema
+- nullable flow guards in the search parser; solution build now completes without warnings
 - secure update and release validation policy documentation
 - contribution and security guidance
 
