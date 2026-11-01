@@ -59,6 +59,10 @@
                           Click="ReaderMenuItem_Click" />
             </MenuItem>
             <MenuItem Header="_Mail">
+                <MenuItem Header="_Compose"
+                          InputGestureText="Ctrl+N"
+                          Click="ComposeButton_Click" />
+                <Separator />
                 <MenuItem x:Name="MenuSyncItem"
                           Header="_Sync selected account"
                           InputGestureText="Ctrl+R"
@@ -68,6 +72,12 @@
                           Header="Saved _drafts..."
                           IsEnabled="False"
                           Click="DraftsButton_Click" />
+            </MenuItem>
+            <MenuItem Header="_Tools">
+                <MenuItem Header="Sort by _newest"
+                          Click="SortNewestMenuItem_Click" />
+                <MenuItem Header="Sort by _relevance"
+                          Click="SortRelevanceMenuItem_Click" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About eMail MPC"

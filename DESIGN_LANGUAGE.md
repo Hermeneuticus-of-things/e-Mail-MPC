@@ -1,20 +1,18 @@
 # Hallmark design language
 
-This document is the Hallmark design language for eMail MPC. It is the product's UI authority, not an optional layer beside another design system. Follow it for all interface work.
+This is the canonical Hallmark design language for the owner's applications, including eMail MPC and applications developed in the future. It is a shared rule set, not an eMail MPC-only visual theme or an optional layer beside another design system.
 
-## Product declaration
-
-**Core function:** read and compose email. **Foreground zone:** the selected message body while reading and the editable message body while composing.
+Each application must declare its own core function and foreground zone in its README or `DESIGN.md`, in one short sentence. Do not copy another application's declaration without verifying that it describes that application's actual work.
 
 ## Governing rules
 
-1. **Core work is foreground.** The app's email work receives attention first; surrounding controls do not compete with it.
-2. **The core function and foreground zone are explicit.** This product declaration is the reference for applying that rule to eMail MPC.
+1. **Core work is foreground.** The application's declared core work receives attention first; surrounding controls do not compete with it.
+2. **The core function and foreground zone are explicit.** Each application declares them in its own README or `DESIGN.md`.
 3. **Supporting controls stay available but in the background.** Menus, buttons, toolbars, and panels remain reachable, but stay small, discrete, and quiet.
-4. **Use minimal size.** Controls are only as large as needed to read and use. Avoid wasted space and interface elements that take space away from email.
+4. **Use minimal size.** Controls are only as large as needed to read and use. Avoid wasted space and interface elements that take space away from the core work.
 5. **No large buttons or oversized icons.**
 6. **Use compact dropdowns for enumerated field values.** Use buttons for primary actions and confirmation, not as button bars for changing values.
-7. **Keep the interface quiet.** Attention stays on reading and composing email.
+7. **Keep the interface quiet.** Attention stays on the application's core work.
 8. **Use a vector-scalable interface.** Windows are resizable; layouts reflow, and graphics stay crisp instead of stretching raster bitmaps.
 9. **Hallmark is this document.** Do not treat it as a separate or optional design track.
 
@@ -39,6 +37,10 @@ Use compact dropdowns for fixed sets of values such as account, sort order, mode
 Use inline text fields for free text and suitable compact pickers for dates or numbers. Use compact toggles for on/off values. Do not replace an enum dropdown with a prominent row of buttons.
 
 Reserve visible buttons for primary actions and confirmation. Keep secondary actions in menus or other compact, accessible controls. Make destructive actions visibly distinct without making them prominent. Hover, focus, active, disabled, loading, and error states should remain discreet and understandable.
+
+## Menus and feature reachability
+
+Compactness is not a reason to remove functionality or flatten a useful menu. Keep the application's implemented commands reachable. When there are many commands, organize the full set into clear menu categories and well-named submenus, with separators, keyboard shortcuts, or a command palette where they help users find work. Do not delete, hide permanently, or omit menu commands merely to make the interface look simpler. A compact dropdown is appropriate for changing an enumerated field value; it is not a substitute for preserving the application's broader command structure.
 
 ## Scale, accessibility, and layout
 
@@ -98,5 +100,5 @@ Do not use oversized buttons or icons, prominent button bars for enum values, bl
 
 ## Project documentation
 
-- [README](../README.md)
-- [Roadmap](../ROADMAP.md)
+- [README](README.md)
+- [Roadmap](ROADMAP.md)

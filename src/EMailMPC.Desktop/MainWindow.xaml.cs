@@ -86,6 +86,16 @@ public partial class MainWindow : Window
         ReaderSplitterColumn.Width = new GridLength(ReaderMenuItem.IsChecked ? 4 : 0);
     }
 
+    private void SortNewestMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        SortCombo.SelectedIndex = 0;
+    }
+
+    private void SortRelevanceMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        SortCombo.SelectedIndex = 1;
+    }
+
     private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
     {
         var version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "development";
