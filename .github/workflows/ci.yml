@@ -79,11 +79,30 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed with exit code $LASTEXITCODE." }
           Copy-Item "$output/eMail-MPC-$env:APP_VERSION-windows-x64-setup.exe" "$output/eMail-MPC-windows-x64-setup.exe"
 
+          $priorOutput = Join-Path $env:RUNNER_TEMP "email-mpc-prior-installer"
+          New-Item -ItemType Directory -Force $priorOutput | Out-Null
+          $currentVersion = $env:APP_VERSION
+          $env:APP_VERSION = "0.0.1"
+          $env:APP_OUTPUT_DIR = $priorOutput
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "installer/eMailMPC.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Prior-version Inno Setup compilation failed with exit code $LASTEXITCODE." }
+          $env:APP_VERSION = $currentVersion
+          $env:APP_OUTPUT_DIR = $output
+
           $packages = Get-ChildItem $output -File | Where-Object { $_.Extension -in ".zip", ".exe" }
           foreach ($file in $packages) {
             $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             Set-Content -Path "$($file.FullName).sha256" -Value "$hash  $($file.Name)" -NoNewline
           }
+
+      - name: Validate Windows installation and portable replacement
+        shell: pwsh
+        run: |
+          ./scripts/validate_windows_install.ps1 `
+            -InstallerPath "artifacts/eMail-MPC-$env:APP_VERSION-windows-x64-setup.exe" `
+            -ExpectedVersion $env:APP_VERSION `
+            -PriorInstallerPath "$env:RUNNER_TEMP/email-mpc-prior-installer/eMail-MPC-0.0.1-windows-x64-setup.exe" `
+            -PortableArchivePath "artifacts/eMail-MPC-$env:APP_VERSION-windows-x64-portable.zip"
 
       - name: Upload packages for installation testing
         uses: actions/upload-artifact@v4

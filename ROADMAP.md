@@ -26,22 +26,24 @@ The current target is a secure email client, not a complete personal-information
 
 ## Current state
 
-The repository currently contains a Windows WPF client with encrypted local storage, IMAP/SMTP account setup using app passwords, bounded incremental read-only IMAP sync, local reading and search, plain-text sending, saved drafts, on-demand attachment downloads, encrypted local backup/restore, and user-triggered verified update staging.
+The repository currently contains a Windows WPF client with encrypted local storage, IMAP/SMTP account setup using app passwords, bounded incremental read-only IMAP sync, local reading and search, plain-text sending with bounded file attachments, an encrypted local Sent view for SMTP-accepted messages and their attachments, encrypted drafts with automatic saving after edits and before closing, reply/reply-all/forward draft composition with quoted original text and threaded reply headers, on-demand attachment downloads, encrypted local backup/restore, and user-triggered verified update staging.
 
 Search includes keyed operators, phrases, negation, OR groups, relevance/date sorting, and a deterministic Romanian/English query helper. The helper is not an AI model.
 
-The current implementation is a working foundation, **not a finished email client**. Server-side mailbox mutations, OAuth, full-history synchronization, rich composition, sending attachments, persistent Sent mail, MCP, embedded AI, and macOS/Android clients are not yet shipped. See the README for the user-facing feature and limitation summary.
+The current implementation is a working foundation, **not a finished email client**. Server-side mailbox mutations, OAuth, full-history synchronization, rich composition, provider-synchronized Sent mail, MCP, embedded AI, and macOS/Android clients are not yet shipped. See the README for the user-facing feature and limitation summary.
+
+The repository has adopted Ionuț Application Design Language. The desktop now has its warm opaque paper palette, shared control tokens, active/inactive selection styling, visible focus indicators, and a tested per-window focus model. The main window, account setup, compose, and drafts register work surfaces; current command dispatch, modal/file-dialog scopes, and account/search dropdown scopes are connected to the WPF focus adapter, which saves and restores control, text selection/caret, and scroll position. This is a first conformance increment, not a claim that the full language is implemented: complete surface and command coverage, native UI/accessibility checks, and 100/150/200% scaling checks remain open.
 
 ## Priority 0 — Finish reliability and safe recovery
 
-**Status: In progress.** Backup/restore and verified manual update staging exist; rollback, installation validation, and migration are incomplete.
+**Status: In progress.** Backup/restore and verified manual update staging exist. Schema upgrades are transactional, create a verified encrypted pre-migration snapshot, and can be retried after a failed migration without losing mail. Users can restore a snapshot from the in-app File menu; the restore validates a staged copy and preserves the key and account credentials. Release CI now creates and verifies GitHub build-provenance attestations, which users can also verify independently; the desktop updater does not yet verify attestations or Authenticode signatures. A Windows CI smoke-test installs per-user and machine-wide, upgrades from a lower-version Inno Setup fixture to the current installer, reinstalls/uninstalls, and replaces portable program files while checking that local data survives. The fixture uses the current app payload with a lower installer version; testing an upgrade from a previously published binary, the first successful runner execution, and automatic application-update rollback remain outstanding.
 
 ### Work
 
 - Implement update failure detection and a tested recovery/rollback path for both installed and portable deployments.
 - Define and test data/schema migration behavior, including interruption, restart, backup restoration, and compatibility with older data.
 - Validate install, upgrade, uninstall, per-user install, elevated machine-wide install, and portable replacement on supported Windows versions.
-- Verify update authenticity, not only transfer integrity: establish release signing and a trusted verification path before presenting releases as publisher-authenticated. SHA-256 alone does not establish who published a package.
+- Verify update authenticity in the desktop client, not only transfer integrity: validate GitHub build-provenance attestations or establish Authenticode signing and a trusted verification path before presenting releases as publisher-authenticated. SHA-256 alone does not establish who published a package.
 - Make failure messages actionable; preserve the existing data and provide a recovery path when an update or migration fails.
 - Document support boundaries, backup practices, and recovery steps.
 
@@ -54,7 +56,7 @@ The current implementation is a working foundation, **not a finished email clien
 
 ## Priority 1 — Complete everyday Windows email workflows
 
-**Status: Partially implemented.** The current client supports app-password IMAP/SMTP, limited sync, reading, plain-text sending, drafts, and attachment downloads.
+**Status: Partially implemented.** The current client supports app-password IMAP/SMTP, limited sync, reading, plain-text sending with size-limited attachments, encrypted attachment-bearing drafts, reply/reply-all/forward composition with stored `Message-ID`/`In-Reply-To`/`References` headers, and attachment downloads. Server-side sent-mail reconciliation and broader MIME/thread display remain incomplete.
 
 ### Accounts and authentication
 
@@ -71,11 +73,11 @@ The current implementation is a working foundation, **not a finished email clien
 
 ### Reading, composing, and sending
 
-- Add reply, reply-all, and forward flows that preserve the intended recipients and message context.
-- Add compose attachments, configurable size limits, progress, failure recovery, and a clear distinction between downloaded and remote attachments.
+- Verify stored `In-Reply-To`/`References` threading headers and reply-all recipient behavior against representative provider messages and providers.
+- Improve attachment progress and failure recovery while keeping clear distinctions between downloaded and remote attachments.
 - Decide and implement safe HTML email display and composition, including sanitization, remote-content controls, charset handling, and plain-text fallback.
-- Add a durable Sent-folder story: reconcile accepted SMTP sends with provider Sent folders and avoid accidental duplicate sends after uncertain outcomes.
-- Improve draft behavior with reliable autosave/recovery while preserving the current explicit save and encrypted local storage guarantees.
+- Extend the local Sent view into a durable provider-aware Sent workflow: reconcile accepted SMTP sends with provider Sent folders and avoid accidental duplicate sends after uncertain outcomes.
+- Extend draft recovery with crash-recovery validation and clearer recovery feedback; debounced autosave, save-before-close, explicit save, and encrypted local persistence are implemented.
 - Handle message threading, common MIME structures, inline images, and malformed messages without losing the readable plain-text view.
 
 ### Mail data portability
@@ -92,10 +94,13 @@ The current implementation is a working foundation, **not a finished email clien
 
 ## Priority 2 — Finish organization and daily usability
 
-**Status: Partially implemented.** Search, filters, sorting, and a compact Hallmark-inspired workspace exist; broader organization and accessibility work remains.
+**Status: Partially implemented.** Search, filters, and sorting are in place. The first tested active-surface model now covers the main mail window and key secondary windows, including modal and dropdown return paths. Full coverage, broader organization, and accessibility/scaling work remain.
 
 ### Work
 
+- Complete Ionuț ADL surface registration for every input-taking area and transient, using WPF's focus manager as the native adapter rather than a competing focus system.
+- Expand active-surface command routing and restore behavior across menus, all dialogs, dropdowns, sibling surfaces, and separate windows; retain each surface's list selection as well as control, caret, and scroll position.
+- Extend focus-model and UI tests for toolbar actions, keyboard traversal, nested Escape behavior, screen-reader announcements, and separate windows.
 - Add saved searches, reusable filters, and user-configurable sorting and views.
 - Add user-defined rules with a preview/test mode, explicit enablement, and understandable explanations of each action.
 - Add configurable signatures, identity defaults, and per-account composition preferences.

@@ -42,7 +42,8 @@ We aim to:
 - exporting an attachment writes a regular, unencrypted file only to a path explicitly selected by the user
 - if an existing database's key is missing or invalid, startup must not silently replace it
 - update checks are user-triggered; the stable manifest pins the setup URL, and the installer size and SHA-256 are verified before the app offers to launch it
-- release checksums detect download corruption but do not authenticate the publisher; code signing remains a separate release-hardening task
+- release checksums detect download corruption but do not authenticate the publisher; release CI publishes GitHub build-provenance attestations that users can verify with `gh attestation verify <asset> -R Hermeneuticus-of-things/e-Mail-MPC`
+- the desktop updater does not yet verify GitHub attestations or an Authenticode publisher signature; never interpret its SHA-256 check as publisher authentication
 - releases should be signed or otherwise checksum-verified where possible
 - data handling should minimize exposure and privilege
 - security-sensitive changes should be reviewed by maintainers
