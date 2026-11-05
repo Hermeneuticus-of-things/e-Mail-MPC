@@ -18,7 +18,17 @@ public sealed class ImapSyncIncrementalTests
         var folder = CreateInboxRecord(account);
         await database.SaveAccountAsync(account, [folder]);
         var fake = new FakeImapSyncClient();
-        fake.AddFolder(folder.RemoteId, 42, CreateMessages(1, 5));
+        fake.AddFolder(
+            folder.RemoteId,
+            42,
+            CreateMessages(1, 5).Select(message => message.Uid == 3
+                ? message with
+                {
+                    MessageId = "<message-3@example.com>",
+                    InReplyTo = "<parent@example.com>",
+                    References = ["<root@example.com>", "<parent@example.com>"]
+                }
+                : message));
 
         var service = new ImapMailService(database, () => fake);
         var result = await service.SynchronizeAsync(account, "app-password", [folder]);
@@ -31,6 +41,11 @@ public sealed class ImapSyncIncrementalTests
         Assert.NotNull(state);
         Assert.Equal(42u, state.UidValidity);
         Assert.Equal(5u, state.HighestUid);
+        var threadedMessage = await database.GetMessageAsync($"{account.Id}:{SyncFolderId(account, folder)}:3");
+        Assert.NotNull(threadedMessage);
+        Assert.Equal("<message-3@example.com>", threadedMessage.MessageId);
+        Assert.Equal("<parent@example.com>", threadedMessage.InReplyTo);
+        Assert.Equal("<root@example.com> <parent@example.com>", threadedMessage.References);
         Assert.Contains(fake.CallLog, call => call.StartsWith($"newest:{folder.RemoteId}", StringComparison.Ordinal));
     }
 

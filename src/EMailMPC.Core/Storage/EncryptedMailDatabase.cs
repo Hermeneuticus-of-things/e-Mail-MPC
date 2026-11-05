@@ -11,7 +11,7 @@ namespace EMailMPC.Core.Storage;
 public sealed class EncryptedMailDatabase : IDisposable
 {
     public const int MaximumAttachmentBytes = 25 * 1024 * 1024;
-    private const int CurrentSchemaVersion = 6;
+    private const int CurrentSchemaVersion = 8;
     private static readonly Regex SearchTokenPattern = new(@"[\p{L}\p{M}\p{N}]+", RegexOptions.Compiled);
     private static readonly object ProviderLock = new();
     private static bool _providerInitialized;
@@ -39,12 +39,19 @@ public sealed class EncryptedMailDatabase : IDisposable
         ThrowIfDisposed();
         Directory.CreateDirectory(Path.GetDirectoryName(_databasePath)!);
 
+        var databaseExisted = File.Exists(_databasePath);
         using var connection = OpenConnection();
         VerifyReadableDatabase(connection);
         ExecuteNonQuery(connection, "PRAGMA cipher_memory_security = ON;");
         ExecuteNonQuery(connection, "PRAGMA journal_mode = DELETE;");
         ExecuteNonQuery(connection, "PRAGMA synchronous = FULL;");
         ExecuteNonQuery(connection, "PRAGMA foreign_keys = ON;");
+        var version = ReadSchemaVersion(connection);
+        if (databaseExisted && version < CurrentSchemaVersion)
+        {
+            CreatePreMigrationSnapshot(version);
+        }
+
         Migrate(connection);
     }
 
@@ -310,10 +317,17 @@ public sealed class EncryptedMailDatabase : IDisposable
         await SaveMessagesAsync([message], cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task SaveDraftAsync(MailDraftRecord draft, CancellationToken cancellationToken = default)
+    public Task SaveDraftAsync(MailDraftRecord draft, CancellationToken cancellationToken = default) =>
+        SaveDraftAsync(draft, [], cancellationToken);
+
+    public async Task SaveDraftAsync(
+        MailDraftRecord draft,
+        IReadOnlyCollection<MailDraftAttachmentRecord> attachments,
+        CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(draft);
+        ArgumentNullException.ThrowIfNull(attachments);
         if (string.IsNullOrWhiteSpace(draft.Id) ||
             draft.Id.Length > 128 ||
             draft.Recipients is null ||
@@ -323,23 +337,60 @@ public sealed class EncryptedMailDatabase : IDisposable
             draft.Subject.Length > 998 ||
             draft.BodyText.Length > 1_048_576 ||
             draft.Subject.Contains('\0') ||
-            draft.BodyText.Contains('\0'))
+            draft.BodyText.Contains('\0') ||
+            draft.InReplyTo?.Length > 998 ||
+            draft.References?.Length > 16_384 ||
+            draft.InReplyTo?.Any(char.IsControl) == true ||
+            draft.References?.Any(char.IsControl) == true)
         {
             throw new ArgumentException("Draft fields are invalid or exceed supported limits.", nameof(draft));
         }
 
+        long attachmentBytes = 0;
+        foreach (var attachment in attachments)
+        {
+            ArgumentNullException.ThrowIfNull(attachment);
+            if (string.IsNullOrWhiteSpace(attachment.FileName) ||
+                attachment.FileName.Length > 255 ||
+                attachment.FileName.Any(char.IsControl) ||
+                attachment.FileName.IndexOfAny("<>:\"/\\|?*".ToCharArray()) >= 0 ||
+                attachment.FileName.Contains('/') ||
+                attachment.FileName.Contains('\\') ||
+                string.IsNullOrWhiteSpace(attachment.ContentType) ||
+                attachment.ContentType.Length > 255 ||
+                attachment.ContentType.Any(char.IsControl) ||
+                attachment.Content is null)
+            {
+                throw new ArgumentException("Draft attachment fields are invalid.", nameof(attachments));
+            }
+
+            attachmentBytes += attachment.Content.Length;
+            if (attachmentBytes > MaximumAttachmentBytes)
+            {
+                throw new ArgumentException(
+                    $"Draft attachments cannot exceed {MaximumAttachmentBytes / (1024 * 1024)} MiB in total.",
+                    nameof(attachments));
+            }
+        }
+
         await using var connection = OpenConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
         command.CommandText = """
-            INSERT INTO mail_drafts (id, account_id, recipients, subject, body_text, updated_at_utc)
-            VALUES ($id, $accountId, $recipients, $subject, $body, $updated)
+            INSERT INTO mail_drafts
+                (id, account_id, recipients, subject, body_text, updated_at_utc, in_reply_to, references_header)
+            VALUES
+                ($id, $accountId, $recipients, $subject, $body, $updated, $inReplyTo, $references)
             ON CONFLICT(id) DO UPDATE SET
                 account_id = excluded.account_id,
                 recipients = excluded.recipients,
                 subject = excluded.subject,
                 body_text = excluded.body_text,
-                updated_at_utc = excluded.updated_at_utc;
+                updated_at_utc = excluded.updated_at_utc,
+                in_reply_to = excluded.in_reply_to,
+                references_header = excluded.references_header;
             """;
         command.Parameters.AddWithValue("$id", draft.Id);
         command.Parameters.AddWithValue("$accountId", (object?)draft.AccountId ?? DBNull.Value);
@@ -349,7 +400,68 @@ public sealed class EncryptedMailDatabase : IDisposable
         command.Parameters.AddWithValue(
             "$updated",
             draft.UpdatedAtUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$inReplyTo", (object?)draft.InReplyTo ?? DBNull.Value);
+        command.Parameters.AddWithValue("$references", (object?)draft.References ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        command.Parameters.Clear();
+        command.CommandText = "DELETE FROM draft_attachments WHERE draft_id = $draftId;";
+        command.Parameters.AddWithValue("$draftId", draft.Id);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        command.Parameters.Clear();
+        command.CommandText = """
+            INSERT INTO draft_attachments (id, draft_id, filename, content_type, size_bytes, content)
+            VALUES ($id, $draftId, $filename, $contentType, $size, $content);
+            """;
+        var id = command.Parameters.Add("$id", SqliteType.Text);
+        var draftId = command.Parameters.Add("$draftId", SqliteType.Text);
+        var filename = command.Parameters.Add("$filename", SqliteType.Text);
+        var contentType = command.Parameters.Add("$contentType", SqliteType.Text);
+        var size = command.Parameters.Add("$size", SqliteType.Integer);
+        var content = command.Parameters.Add("$content", SqliteType.Blob);
+        foreach (var attachment in attachments)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            id.Value = Guid.NewGuid().ToString("N");
+            draftId.Value = draft.Id;
+            filename.Value = attachment.FileName;
+            contentType.Value = attachment.ContentType;
+            size.Value = attachment.Content.Length;
+            content.Value = attachment.Content;
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<MailDraftAttachmentRecord>> GetDraftAttachmentsAsync(
+        string draftId,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(draftId);
+        await using var connection = OpenConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT filename, content_type, content
+            FROM draft_attachments
+            WHERE draft_id = $draftId
+            ORDER BY id;
+            """;
+        command.Parameters.AddWithValue("$draftId", draftId.Trim());
+        var attachments = new List<MailDraftAttachmentRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            attachments.Add(new MailDraftAttachmentRecord(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetFieldValue<byte[]>(2)));
+        }
+
+        return attachments;
     }
 
     public async Task<IReadOnlyList<MailDraftRecord>> ListDraftsAsync(
@@ -367,7 +479,7 @@ public sealed class EncryptedMailDatabase : IDisposable
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, account_id, recipients, subject, body_text, updated_at_utc
+            SELECT id, account_id, recipients, subject, body_text, updated_at_utc, in_reply_to, references_header
             FROM mail_drafts
             WHERE ($accountId IS NULL OR account_id = $accountId)
             ORDER BY updated_at_utc DESC, id ASC
@@ -385,7 +497,9 @@ public sealed class EncryptedMailDatabase : IDisposable
                 reader.GetString(2),
                 reader.GetString(3),
                 reader.GetString(4),
-                DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)));
+                DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                reader.IsDBNull(6) ? null : reader.GetString(6),
+                reader.IsDBNull(7) ? null : reader.GetString(7)));
         }
 
         return drafts;
@@ -402,7 +516,7 @@ public sealed class EncryptedMailDatabase : IDisposable
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, account_id, recipients, subject, body_text, updated_at_utc
+            SELECT id, account_id, recipients, subject, body_text, updated_at_utc, in_reply_to, references_header
             FROM mail_drafts
             WHERE id = $id
             LIMIT 1;
@@ -420,7 +534,9 @@ public sealed class EncryptedMailDatabase : IDisposable
             reader.GetString(2),
             reader.GetString(3),
             reader.GetString(4),
-            DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind));
+            DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+            reader.IsDBNull(6) ? null : reader.GetString(6),
+            reader.IsDBNull(7) ? null : reader.GetString(7));
     }
 
     public async Task DeleteDraftAsync(string id, CancellationToken cancellationToken = default)
@@ -459,9 +575,11 @@ public sealed class EncryptedMailDatabase : IDisposable
         command.Transaction = (SqliteTransaction)transaction;
         command.CommandText = """
             INSERT INTO mail_messages
-                (id, sender, recipients, subject, body_text, received_at_utc, folder, is_read, is_flagged, has_attachments, account_id)
+                (id, sender, recipients, subject, body_text, received_at_utc, folder, is_read, is_flagged,
+                 has_attachments, account_id, message_id, in_reply_to, references_header)
             VALUES
-                ($id, $sender, $recipients, $subject, $body, $received, $folder, $isRead, $isFlagged, $hasAttachments, $accountId)
+                ($id, $sender, $recipients, $subject, $body, $received, $folder, $isRead, $isFlagged,
+                 $hasAttachments, $accountId, $messageId, $inReplyTo, $references)
             ON CONFLICT(id) DO UPDATE SET
                 sender = excluded.sender,
                 recipients = excluded.recipients,
@@ -472,7 +590,10 @@ public sealed class EncryptedMailDatabase : IDisposable
                 is_read = excluded.is_read,
                 is_flagged = excluded.is_flagged,
                 has_attachments = excluded.has_attachments,
-                account_id = excluded.account_id;
+                account_id = excluded.account_id,
+                message_id = excluded.message_id,
+                in_reply_to = excluded.in_reply_to,
+                references_header = excluded.references_header;
             """;
         var id = command.Parameters.Add("$id", SqliteType.Text);
         var sender = command.Parameters.Add("$sender", SqliteType.Text);
@@ -485,6 +606,9 @@ public sealed class EncryptedMailDatabase : IDisposable
         var isFlagged = command.Parameters.Add("$isFlagged", SqliteType.Integer);
         var hasAttachments = command.Parameters.Add("$hasAttachments", SqliteType.Integer);
         var accountId = command.Parameters.Add("$accountId", SqliteType.Text);
+        var messageId = command.Parameters.Add("$messageId", SqliteType.Text);
+        var inReplyTo = command.Parameters.Add("$inReplyTo", SqliteType.Text);
+        var references = command.Parameters.Add("$references", SqliteType.Text);
         await command.PrepareAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var message in messages)
@@ -501,6 +625,9 @@ public sealed class EncryptedMailDatabase : IDisposable
             isFlagged.Value = message.IsFlagged ? 1 : 0;
             hasAttachments.Value = message.HasAttachments ? 1 : 0;
             accountId.Value = (object?)message.AccountId ?? DBNull.Value;
+            messageId.Value = (object?)message.MessageId ?? DBNull.Value;
+            inReplyTo.Value = (object?)message.InReplyTo ?? DBNull.Value;
+            references.Value = (object?)message.References ?? DBNull.Value;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -1059,7 +1186,7 @@ public sealed class EncryptedMailDatabase : IDisposable
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT id, sender, recipients, subject, body_text, received_at_utc, folder,
-                   is_read, is_flagged, has_attachments, account_id
+                   is_read, is_flagged, has_attachments, account_id, message_id, in_reply_to, references_header
             FROM mail_messages
             WHERE id = $id
             LIMIT 1;
@@ -1083,7 +1210,10 @@ public sealed class EncryptedMailDatabase : IDisposable
             reader.GetBoolean(7),
             reader.GetBoolean(8),
             reader.GetBoolean(9),
-            reader.IsDBNull(10) ? null : reader.GetString(10));
+            reader.IsDBNull(10) ? null : reader.GetString(10),
+            reader.IsDBNull(11) ? null : reader.GetString(11),
+            reader.IsDBNull(12) ? null : reader.GetString(12),
+            reader.IsDBNull(13) ? null : reader.GetString(13));
     }
 
     public void Dispose()
@@ -1178,9 +1308,7 @@ public sealed class EncryptedMailDatabase : IDisposable
 
     private static void Migrate(SqliteConnection connection)
     {
-        using var versionCommand = connection.CreateCommand();
-        versionCommand.CommandText = "PRAGMA user_version;";
-        var version = Convert.ToInt32(versionCommand.ExecuteScalar(), CultureInfo.InvariantCulture);
+        var version = ReadSchemaVersion(connection);
         if (version > CurrentSchemaVersion)
         {
             throw new InvalidOperationException($"Database schema version {version} is newer than supported version {CurrentSchemaVersion}.");
@@ -1319,6 +1447,18 @@ public sealed class EncryptedMailDatabase : IDisposable
 
             CREATE INDEX IF NOT EXISTS ix_mail_drafts_account_updated
                 ON mail_drafts(account_id, updated_at_utc DESC);
+
+            CREATE TABLE IF NOT EXISTS draft_attachments (
+                id TEXT NOT NULL PRIMARY KEY,
+                draft_id TEXT NOT NULL REFERENCES mail_drafts(id) ON DELETE CASCADE,
+                filename TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL CHECK (size_bytes BETWEEN 0 AND 26214400),
+                content BLOB NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_draft_attachments_draft
+                ON draft_attachments(draft_id);
             """;
         command.ExecuteNonQuery();
         if (version < 5)
@@ -1327,9 +1467,68 @@ public sealed class EncryptedMailDatabase : IDisposable
             command.ExecuteNonQuery();
         }
 
+        if (version < 8)
+        {
+            AddColumnIfMissing(
+                connection,
+                command,
+                "mail_messages",
+                "message_id",
+                "ALTER TABLE mail_messages ADD COLUMN message_id TEXT;");
+            AddColumnIfMissing(
+                connection,
+                command,
+                "mail_messages",
+                "in_reply_to",
+                "ALTER TABLE mail_messages ADD COLUMN in_reply_to TEXT;");
+            AddColumnIfMissing(
+                connection,
+                command,
+                "mail_messages",
+                "references_header",
+                "ALTER TABLE mail_messages ADD COLUMN references_header TEXT;");
+            AddColumnIfMissing(
+                connection,
+                command,
+                "mail_drafts",
+                "in_reply_to",
+                "ALTER TABLE mail_drafts ADD COLUMN in_reply_to TEXT;");
+            AddColumnIfMissing(
+                connection,
+                command,
+                "mail_drafts",
+                "references_header",
+                "ALTER TABLE mail_drafts ADD COLUMN references_header TEXT;");
+        }
+
         command.CommandText = $"PRAGMA user_version = {CurrentSchemaVersion};";
         command.ExecuteNonQuery();
         transaction.Commit();
+    }
+
+    private void CreatePreMigrationSnapshot(int schemaVersion)
+    {
+        var snapshotPath = $"{_databasePath}.pre-migration-v{schemaVersion}-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}.db";
+        var temporaryPath = $"{snapshotPath}.tmp";
+        try
+        {
+            CreateEncryptedSnapshot(temporaryPath);
+            File.Move(temporaryPath, snapshotPath);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
+    private static int ReadSchemaVersion(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA user_version;";
+        return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
     }
 
     private static string? BuildFtsExpression(string text)
@@ -1470,7 +1669,13 @@ public sealed class EncryptedMailDatabase : IDisposable
 
         if (message.Id.Length > 512 || message.Sender.Length > 4096 ||
             message.Recipients.Length > 16_384 || message.Subject.Length > 16_384 ||
-            message.Folder.Length > 4096)
+            message.Folder.Length > 4096 ||
+            message.MessageId?.Length > 998 ||
+            message.InReplyTo?.Length > 998 ||
+            message.References?.Length > 16_384 ||
+            message.MessageId?.Any(char.IsControl) == true ||
+            message.InReplyTo?.Any(char.IsControl) == true ||
+            message.References?.Any(char.IsControl) == true)
         {
             throw new ArgumentException("A message field exceeds the supported size.", nameof(message));
         }
@@ -1480,6 +1685,33 @@ public sealed class EncryptedMailDatabase : IDisposable
     {
         using var command = connection.CreateCommand();
         command.CommandText = sql;
+        command.ExecuteNonQuery();
+    }
+
+    private static void AddColumnIfMissing(
+        SqliteConnection connection,
+        SqliteCommand command,
+        string tableName,
+        string columnName,
+        string addColumnSql)
+    {
+        using var inspection = connection.CreateCommand();
+        inspection.CommandText = tableName switch
+        {
+            "mail_messages" => "PRAGMA table_info(mail_messages);",
+            "mail_drafts" => "PRAGMA table_info(mail_drafts);",
+            _ => throw new ArgumentOutOfRangeException(nameof(tableName))
+        };
+        using var reader = inspection.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        command.CommandText = addColumnSql;
         command.ExecuteNonQuery();
     }
 
@@ -1500,7 +1732,10 @@ public sealed record MailMessageRecord(
     bool IsRead,
     bool IsFlagged,
     bool HasAttachments,
-    string? AccountId = null);
+    string? AccountId = null,
+    string? MessageId = null,
+    string? InReplyTo = null,
+    string? References = null);
 
 public sealed record MailSearchResult(
     string Id,
@@ -1549,7 +1784,14 @@ public sealed record MailDraftRecord(
     string Recipients,
     string Subject,
     string BodyText,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    string? InReplyTo = null,
+    string? References = null);
+
+public sealed record MailDraftAttachmentRecord(
+    string FileName,
+    string ContentType,
+    byte[] Content);
 
 public sealed record MailAccountRecord(
     string Id,

@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.IO.Compression;
 using EMailMPC.Core.Storage;
+using Microsoft.Data.Sqlite;
 
 namespace EMailMPC.Core.Tests.Storage;
 
@@ -112,6 +113,138 @@ public sealed class LocalMailBackupServiceTests
             using var existingDatabase = NewDatabase(Path.Combine(target, "mail.db"), key);
             existingDatabase.Initialize();
             Assert.Equal(["keep-message"], (await existingDatabase.SearchAsync(new EMailMPC.Core.Search.SearchCriteria())).Select(message => message.Id));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    [WindowsFact]
+    public async Task MigrationSnapshotRestoreReturnsDatabaseToSnapshotAndPreservesCurrentKey()
+    {
+        using var directory = new TemporaryDirectory();
+        var dataDirectory = Path.Combine(directory.Path, "data");
+        var keyPath = Path.Combine(dataDirectory, "keys", "database.dpapi");
+        var databasePath = Path.Combine(dataDirectory, "mail.db");
+        var key = new WindowsUserKeyStore().LoadOrCreate(keyPath);
+        const string accountId = "snapshot-account";
+        var snapshotPath = Path.Combine(
+            dataDirectory,
+            $"mail.db.pre-migration-v7-{DateTime.UtcNow.ToString("yyyyMMddHHmmssfff", System.Globalization.CultureInfo.InvariantCulture)}-{Guid.NewGuid():N}.db");
+        try
+        {
+            using (var database = NewDatabase(databasePath, key))
+            {
+                database.Initialize();
+                await database.SaveAccountAsync(CreateAccount() with { Id = accountId });
+                await database.SaveMessageAsync(CreateMessage("before-snapshot", null));
+                using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+                       {
+                           DataSource = databasePath,
+                           Pooling = false
+                       }.ToString()))
+                {
+                    connection.Open();
+                    using var command = connection.CreateCommand();
+                    command.CommandText = $"""
+                        PRAGMA key = "x'{Convert.ToHexString(key)}'";
+                        PRAGMA user_version = 7;
+                        """;
+                    command.ExecuteNonQuery();
+                }
+
+                database.CreateEncryptedSnapshot(snapshotPath);
+                await database.SaveMessageAsync(CreateMessage("after-snapshot", null));
+            }
+
+            var secretStore = new WindowsUserSecretStore(Path.Combine(dataDirectory, "keys", "accounts"));
+            secretStore.Save(accountId, "existing-account-secret");
+            var warning = await new LocalMailBackupService().RestoreMigrationSnapshotAsync(snapshotPath, dataDirectory);
+
+            Assert.Null(warning);
+            Assert.True(File.Exists(keyPath));
+            Assert.Equal("existing-account-secret", secretStore.Load(accountId));
+            using var restoredDatabase = NewDatabase(databasePath, key);
+            restoredDatabase.Initialize();
+            Assert.Equal(
+                ["before-snapshot"],
+                (await restoredDatabase.SearchAsync(new EMailMPC.Core.Search.SearchCriteria()))
+                    .Select(message => message.Id));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    [WindowsFact]
+    public async Task MigrationSnapshotRestoreRejectsSnapshotsOutsideCurrentDataDirectory()
+    {
+        using var directory = new TemporaryDirectory();
+        var dataDirectory = Path.Combine(directory.Path, "data");
+        Directory.CreateDirectory(dataDirectory);
+        var key = new WindowsUserKeyStore().LoadOrCreate(
+            Path.Combine(dataDirectory, "keys", "database.dpapi"));
+        var databasePath = Path.Combine(dataDirectory, "mail.db");
+        var snapshotPath = Path.Combine(
+            directory.Path,
+            $"mail.db.pre-migration-v7-{DateTime.UtcNow.ToString("yyyyMMddHHmmssfff", System.Globalization.CultureInfo.InvariantCulture)}-{Guid.NewGuid():N}.db");
+        try
+        {
+            using (var database = NewDatabase(databasePath, key))
+            {
+                database.Initialize();
+                await database.SaveMessageAsync(CreateMessage("keep-current", null));
+                database.CreateEncryptedSnapshot(snapshotPath);
+            }
+
+            await Assert.ThrowsAsync<InvalidDataException>(() =>
+                new LocalMailBackupService().RestoreMigrationSnapshotAsync(snapshotPath, dataDirectory));
+
+            using var existingDatabase = NewDatabase(databasePath, key);
+            existingDatabase.Initialize();
+            Assert.Equal(
+                ["keep-current"],
+                (await existingDatabase.SearchAsync(new EMailMPC.Core.Search.SearchCriteria()))
+                    .Select(message => message.Id));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    [WindowsFact]
+    public async Task InvalidMigrationSnapshotDoesNotReplaceCurrentDatabase()
+    {
+        using var directory = new TemporaryDirectory();
+        var dataDirectory = Path.Combine(directory.Path, "data");
+        Directory.CreateDirectory(dataDirectory);
+        var key = new WindowsUserKeyStore().LoadOrCreate(
+            Path.Combine(dataDirectory, "keys", "database.dpapi"));
+        var databasePath = Path.Combine(dataDirectory, "mail.db");
+        var snapshotPath = Path.Combine(
+            dataDirectory,
+            $"mail.db.pre-migration-v7-{DateTime.UtcNow.ToString("yyyyMMddHHmmssfff", System.Globalization.CultureInfo.InvariantCulture)}-{Guid.NewGuid():N}.db");
+        try
+        {
+            using (var database = NewDatabase(databasePath, key))
+            {
+                database.Initialize();
+                await database.SaveMessageAsync(CreateMessage("keep-current", null));
+            }
+
+            await File.WriteAllTextAsync(snapshotPath, "not an encrypted database");
+            await Assert.ThrowsAnyAsync<Exception>(() =>
+                new LocalMailBackupService().RestoreMigrationSnapshotAsync(snapshotPath, dataDirectory));
+
+            using var existingDatabase = NewDatabase(databasePath, key);
+            existingDatabase.Initialize();
+            Assert.Equal(
+                ["keep-current"],
+                (await existingDatabase.SearchAsync(new EMailMPC.Core.Search.SearchCriteria()))
+                    .Select(message => message.Id));
         }
         finally
         {

@@ -313,7 +313,10 @@ public sealed class ImapMailService(EncryptedMailDatabase database, Func<IImapSy
             message.IsRead,
             message.IsFlagged,
             message.HasAttachments,
-            accountId);
+            accountId,
+            message.MessageId,
+            message.InReplyTo,
+            message.References is null ? null : string.Join(' ', message.References));
     }
 
     private async Task SaveMessagesAsync(

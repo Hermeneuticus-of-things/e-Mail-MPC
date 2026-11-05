@@ -1,8 +1,10 @@
 ﻿using System.IO;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
 using EMailMPC.Core.Storage;
+using EMailMPC.Core.Updates;
 
 namespace EMailMPC.Desktop;
 
@@ -19,9 +21,15 @@ public partial class App : Application
     private Mutex? _instanceMutex;
     private bool _ownsInstanceMutex;
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        if (e.Args.Length > 0 && e.Args[0] == "--apply-portable-update")
+        {
+            await RunPortableUpdateHelperAsync(e.Args);
+            return;
+        }
 
         try
         {
@@ -94,6 +102,207 @@ public partial class App : Application
         var mainWindow = new MainWindow();
         MainWindow = mainWindow;
         mainWindow.Show();
+        try
+        {
+            WriteUpdateHealthMarker(e.Args);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                $"The updated application could not complete its startup check.\n\n{exception.Message}",
+                "eMail MPC startup failed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Shutdown(1);
+        }
+    }
+
+    private static void WriteUpdateHealthMarker(IReadOnlyList<string> arguments)
+    {
+        var markerArgumentIndex = -1;
+        for (var index = 0; index < arguments.Count; index++)
+        {
+            if (arguments[index] == "--update-health-marker")
+            {
+                markerArgumentIndex = index;
+                break;
+            }
+        }
+
+        if (markerArgumentIndex < 0)
+        {
+            return;
+        }
+
+        if (markerArgumentIndex + 1 >= arguments.Count)
+        {
+            throw new ArgumentException("The update health marker path is missing.");
+        }
+
+        var markerPath = Path.GetFullPath(arguments[markerArgumentIndex + 1]);
+        var updatesDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "eMail MPC",
+            "updates");
+        if (!IsPathWithin(markerPath, updatesDirectory))
+        {
+            throw new InvalidDataException("The update health marker path is outside the update staging directory.");
+        }
+
+        File.WriteAllText(markerPath, "started");
+    }
+
+    private async Task RunPortableUpdateHelperAsync(IReadOnlyList<string> arguments)
+    {
+        string? backupDirectory = null;
+        string? healthMarkerPath = null;
+        Process? updatedProcess = null;
+        var installationDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(AppContext.BaseDirectory));
+        try
+        {
+            if (arguments.Count != 5
+                || !int.TryParse(arguments[2], out var parentProcessId)
+                || parentProcessId <= 0
+                || !long.TryParse(arguments[4], out var expectedSizeBytes))
+            {
+                throw new ArgumentException("The portable update command arguments are invalid.");
+            }
+
+            var archivePath = Path.GetFullPath(arguments[1]);
+            var updatesDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "eMail MPC",
+                "updates");
+            if (!IsPathWithin(archivePath, updatesDirectory))
+            {
+                throw new InvalidDataException("The update archive is outside the eMail MPC staging directory.");
+            }
+
+            Process? parentProcess = null;
+            try
+            {
+                parentProcess = Process.GetProcessById(parentProcessId);
+            }
+            catch (ArgumentException)
+            {
+            }
+
+            if (parentProcess is not null)
+            {
+                using (parentProcess)
+                {
+                    var parentExecutable = parentProcess.MainModule?.FileName;
+                    if (!string.Equals(
+                            parentExecutable,
+                            Path.Combine(installationDirectory, "EMailMPC.Desktop.exe"),
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException("The update parent process is not this portable installation.");
+                    }
+
+                    await parentProcess.WaitForExitAsync().WaitAsync(TimeSpan.FromMinutes(2));
+                }
+            }
+
+            backupDirectory = await new PortableUpdateService().ApplyAsync(
+                archivePath,
+                installationDirectory,
+                arguments[3],
+                expectedSizeBytes);
+
+            healthMarkerPath = Path.Combine(updatesDirectory, $"health-{Guid.NewGuid():N}.marker");
+            var updatedExecutable = Path.Combine(installationDirectory, "EMailMPC.Desktop.exe");
+            updatedProcess = Process.Start(new ProcessStartInfo
+            {
+                FileName = updatedExecutable,
+                UseShellExecute = false,
+                ArgumentList = { "--update-health-marker", healthMarkerPath }
+            }) ?? throw new InvalidOperationException("The updated application process could not be started.");
+
+            var startupDeadline = DateTimeOffset.UtcNow.AddSeconds(45);
+            while (DateTimeOffset.UtcNow < startupDeadline)
+            {
+                if (File.Exists(healthMarkerPath))
+                {
+                    var cleanupWarning = PortableUpdateService.Complete(installationDirectory, backupDirectory);
+                    backupDirectory = null;
+                    File.Delete(healthMarkerPath);
+                    if (cleanupWarning is not null)
+                    {
+                        MessageBox.Show(
+                            cleanupWarning,
+                            "Portable update completed",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                    }
+
+                    Shutdown(0);
+                    return;
+                }
+
+                if (updatedProcess.HasExited)
+                {
+                    throw new InvalidOperationException(
+                        $"The updated application exited during startup with code {updatedProcess.ExitCode}.");
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(250));
+            }
+
+            throw new TimeoutException("The updated application did not complete its startup check.");
+        }
+        catch (Exception exception)
+        {
+            if (updatedProcess is { HasExited: false })
+            {
+                updatedProcess.Kill(entireProcessTree: true);
+                await updatedProcess.WaitForExitAsync();
+            }
+
+            Exception failure = exception;
+            if (backupDirectory is not null)
+            {
+                try
+                {
+                    PortableUpdateService.Rollback(installationDirectory, backupDirectory);
+                    backupDirectory = null;
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = Path.Combine(installationDirectory, "EMailMPC.Desktop.exe"),
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception rollbackException)
+                {
+                    failure = new AggregateException(
+                        $"The portable update failed and automatic rollback was unsuccessful. Recovery files are at '{backupDirectory}'.",
+                        exception,
+                        rollbackException);
+                }
+            }
+
+            MessageBox.Show(
+                $"The portable update could not be completed.\n\n{failure.Message}",
+                "Portable update rolled back",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Shutdown(1);
+        }
+        finally
+        {
+            updatedProcess?.Dispose();
+            if (healthMarkerPath is not null && File.Exists(healthMarkerPath))
+            {
+                File.Delete(healthMarkerPath);
+            }
+        }
+    }
+
+    private static bool IsPathWithin(string path, string directory)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var fullDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+        return fullPath.StartsWith(fullDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     protected override void OnExit(ExitEventArgs e)

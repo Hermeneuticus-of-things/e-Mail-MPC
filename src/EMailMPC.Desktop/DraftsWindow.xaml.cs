@@ -9,6 +9,7 @@ public partial class DraftsWindow : Window
 {
     private readonly EncryptedMailDatabase _database;
     private readonly MailAccountRecord _account;
+    private readonly WindowFocusCoordinator _focusCoordinator;
     private bool _isLoading;
 
     public DraftsWindow(EncryptedMailDatabase database, MailAccountRecord account)
@@ -16,6 +17,8 @@ public partial class DraftsWindow : Window
         InitializeComponent();
         _database = database;
         _account = account;
+        _focusCoordinator = WindowFocusCoordinator.Attach(this, "drafts");
+        _focusCoordinator.RegisterSurface("drafts.surface", DraftsSurface, DraftsGrid);
         AccountText.Text = account.EmailAddress;
     }
 
@@ -24,6 +27,7 @@ public partial class DraftsWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
         await LoadDraftsAsync();
+        _focusCoordinator.ActivateInitialSurface("drafts.surface");
     }
 
     private void DraftsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -58,7 +62,7 @@ public partial class DraftsWindow : Window
             return;
         }
 
-        var choice = MessageBox.Show(
+        var choice = ShowMessageBox(
             this,
             $"Permanently delete the saved draft “{selected.Draft.Subject}”?",
             "Delete saved draft",
@@ -75,14 +79,21 @@ public partial class DraftsWindow : Window
         OpenButton.IsEnabled = false;
         try
         {
+            var deletedIndex = DraftsGrid.SelectedIndex;
             await _database.DeleteDraftAsync(selected.Draft.Id);
             StatusText.Text = "Draft deleted.";
             await LoadDraftsAsync();
+            if (DraftsGrid.Items.Count > 0)
+            {
+                DraftsGrid.SelectedIndex = Math.Min(deletedIndex, DraftsGrid.Items.Count - 1);
+            }
+
+            DraftsGrid.Focus();
         }
         catch (Exception exception)
         {
             StatusText.Text = "Draft could not be deleted.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"The selected draft could not be deleted.\n\n{exception.Message}",
                 "Draft deletion failed",
@@ -113,7 +124,7 @@ public partial class DraftsWindow : Window
         catch (Exception exception)
         {
             StatusText.Text = "Drafts could not be loaded.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"Saved drafts could not be loaded.\n\n{exception.Message}",
                 "Draft loading failed",
@@ -136,6 +147,20 @@ public partial class DraftsWindow : Window
 
         SelectedDraft = selected.Draft;
         DialogResult = true;
+    }
+
+    private MessageBoxResult ShowMessageBox(
+        Window owner,
+        string message,
+        string caption,
+        MessageBoxButton buttons,
+        MessageBoxImage image,
+        MessageBoxResult defaultResult = MessageBoxResult.OK)
+    {
+        using (_focusCoordinator.PushModalSurface("dialog.drafts-message"))
+        {
+            return MessageBox.Show(owner, message, caption, buttons, image, defaultResult);
+        }
     }
 
     private sealed record DraftListItem(MailDraftRecord Draft)

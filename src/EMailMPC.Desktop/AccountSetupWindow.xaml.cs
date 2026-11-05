@@ -10,6 +10,9 @@ public partial class AccountSetupWindow : Window
 {
     private readonly EncryptedMailDatabase _database;
     private readonly WindowsUserSecretStore _secretStore;
+    private readonly WindowFocusCoordinator _focusCoordinator;
+    private IDisposable? _imapDropdownFocus;
+    private IDisposable? _smtpDropdownFocus;
     private CancellationTokenSource? _operationCancellation;
     private bool _isBusy;
     private bool _closeWhenCancelled;
@@ -20,6 +23,43 @@ public partial class AccountSetupWindow : Window
         InitializeComponent();
         _database = database;
         _secretStore = secretStore;
+        _focusCoordinator = WindowFocusCoordinator.Attach(this, "account-setup");
+        _focusCoordinator.RegisterSurface("account.setup", AccountSetupSurface, EmailBox);
+    }
+
+    private void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        _focusCoordinator.ActivateInitialSurface("account.setup");
+    }
+
+    private void ImapSecurityBox_DropDownOpened(object sender, EventArgs e)
+    {
+        _imapDropdownFocus?.Dispose();
+        _imapDropdownFocus = _focusCoordinator.PushTransientSurface(
+            "dropdown.imap-security",
+            "account.setup",
+            "ImapSecurityBox");
+    }
+
+    private void ImapSecurityBox_DropDownClosed(object sender, EventArgs e)
+    {
+        _imapDropdownFocus?.Dispose();
+        _imapDropdownFocus = null;
+    }
+
+    private void SmtpSecurityBox_DropDownOpened(object sender, EventArgs e)
+    {
+        _smtpDropdownFocus?.Dispose();
+        _smtpDropdownFocus = _focusCoordinator.PushTransientSurface(
+            "dropdown.smtp-security",
+            "account.setup",
+            "SmtpSecurityBox");
+    }
+
+    private void SmtpSecurityBox_DropDownClosed(object sender, EventArgs e)
+    {
+        _smtpDropdownFocus?.Dispose();
+        _smtpDropdownFocus = null;
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
@@ -84,7 +124,7 @@ public partial class AccountSetupWindow : Window
         catch (Exception exception)
         {
             StatusText.Text = "Account was not added.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"The IMAP account could not be verified and saved.\n\n{exception.Message}",
                 "Account setup failed",
@@ -164,12 +204,26 @@ public partial class AccountSetupWindow : Window
     private void ShowInputError(string message)
     {
         StatusText.Text = message;
-        MessageBox.Show(
+        ShowMessageBox(
             this,
             message,
             "Check account details",
             MessageBoxButton.OK,
             MessageBoxImage.Warning);
+    }
+
+    private MessageBoxResult ShowMessageBox(
+        Window owner,
+        string message,
+        string caption,
+        MessageBoxButton buttons,
+        MessageBoxImage image,
+        MessageBoxResult defaultResult = MessageBoxResult.OK)
+    {
+        using (_focusCoordinator.PushModalSurface("dialog.account-message"))
+        {
+            return MessageBox.Show(owner, message, caption, buttons, image, defaultResult);
+        }
     }
 
     private void SetBusy(bool busy)

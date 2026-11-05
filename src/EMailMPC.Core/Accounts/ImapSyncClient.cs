@@ -19,7 +19,10 @@ public sealed record ImapRemoteMessage(
     bool IsFlagged,
     bool HasAttachments,
     string BodyText = "",
-    IReadOnlyList<ImapRemoteAttachment>? Attachments = null);
+    IReadOnlyList<ImapRemoteAttachment>? Attachments = null,
+    string? MessageId = null,
+    string? InReplyTo = null,
+    IReadOnlyList<string>? References = null);
 
 public sealed record ImapRemoteAttachment(
     string PartSpecifier,
@@ -253,7 +256,8 @@ public sealed class MailKitImapSyncClient : IImapSyncClient
             MessageSummaryItems.BodyStructure |
             MessageSummaryItems.Flags |
             MessageSummaryItems.InternalDate |
-            MessageSummaryItems.Size);
+            MessageSummaryItems.Size |
+            MessageSummaryItems.References);
     }
 
     private async Task<IReadOnlyList<ImapRemoteMessage>> ToRemoteMessagesAsync(
@@ -303,7 +307,10 @@ public sealed class MailKitImapSyncClient : IImapSyncClient
                     string.Equals(
                         attachment.ContentDisposition?.Disposition,
                         ContentDisposition.Inline,
-                        StringComparison.OrdinalIgnoreCase))).ToArray()));
+                        StringComparison.OrdinalIgnoreCase))).ToArray(),
+                envelope?.MessageId,
+                envelope?.InReplyTo,
+                summary.References?.ToArray()));
         }
 
         return messages;

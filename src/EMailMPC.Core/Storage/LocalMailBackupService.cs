@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace EMailMPC.Core.Storage;
 
@@ -14,6 +15,9 @@ public sealed class LocalMailBackupService
     private const string ManifestEntry = "manifest.json";
     private const long MaximumArchiveBytes = 20L * 1024 * 1024 * 1024;
     private const int MaximumAccountSecretFiles = 1000;
+    private static readonly Regex MigrationSnapshotNamePattern = new(
+        @"^mail\.db\.pre-migration-v[0-9]+-[0-9]{17}-[0-9a-f]{32}\.db$",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     public async Task CreateAsync(
         EncryptedMailDatabase database,
@@ -200,6 +204,140 @@ public sealed class LocalMailBackupService
             if (Directory.Exists(stagingDirectory))
             {
                 Directory.Delete(stagingDirectory, recursive: true);
+            }
+        }
+    }
+
+    public async Task<string?> RestoreMigrationSnapshotAsync(
+        string snapshotPath,
+        string dataDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(snapshotPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
+        EnsureWindows();
+
+        var targetDirectory = Path.GetFullPath(dataDirectory);
+        var fullSnapshotPath = Path.GetFullPath(snapshotPath);
+        if (!string.Equals(
+                Path.GetDirectoryName(fullSnapshotPath),
+                targetDirectory,
+                StringComparison.OrdinalIgnoreCase)
+            || !MigrationSnapshotNamePattern.IsMatch(Path.GetFileName(fullSnapshotPath)))
+        {
+            throw new InvalidDataException("Choose a pre-migration snapshot from this eMail MPC data directory.");
+        }
+
+        if (!File.Exists(fullSnapshotPath))
+        {
+            throw new FileNotFoundException("The selected pre-migration snapshot was not found.", fullSnapshotPath);
+        }
+
+        var databasePath = Path.Combine(targetDirectory, DatabaseEntry);
+        var keyPath = Path.Combine(targetDirectory, "keys", KeyEntry);
+        if (!File.Exists(databasePath) || !File.Exists(keyPath))
+        {
+            throw new InvalidDataException("The current eMail MPC database or its protected key is missing.");
+        }
+
+        var operationDirectory = Path.Combine(
+            Path.GetDirectoryName(targetDirectory)!,
+            $".emailmpc-migration-restore-{Guid.NewGuid():N}");
+        var stagedDatabasePath = Path.Combine(operationDirectory, DatabaseEntry);
+        var previousDirectory = Path.Combine(operationDirectory, "previous");
+        Directory.CreateDirectory(previousDirectory);
+        var previousFiles = new List<(string OriginalPath, string SavedPath)>();
+        var installedFiles = new List<string>();
+        var committed = false;
+        var preserveOperationDirectory = false;
+
+        try
+        {
+            File.Copy(fullSnapshotPath, stagedDatabasePath);
+            var key = new WindowsUserKeyStore().Load(keyPath);
+            try
+            {
+                using var stagedDatabase = new EncryptedMailDatabase(stagedDatabasePath, key);
+                stagedDatabase.Initialize();
+                _ = await stagedDatabase.ListAccountsAsync(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(key);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            Directory.CreateDirectory(targetDirectory);
+            try
+            {
+                foreach (var fileName in new[] { DatabaseEntry, $"{DatabaseEntry}-wal", $"{DatabaseEntry}-shm" })
+                {
+                    var existingPath = Path.Combine(targetDirectory, fileName);
+                    if (!File.Exists(existingPath))
+                    {
+                        continue;
+                    }
+
+                    var savedPath = Path.Combine(previousDirectory, fileName);
+                    File.Move(existingPath, savedPath);
+                    previousFiles.Add((existingPath, savedPath));
+                }
+
+                File.Move(stagedDatabasePath, databasePath);
+                installedFiles.Add(databasePath);
+                foreach (var suffix in new[] { "-wal", "-shm" })
+                {
+                    var stagedSidecar = stagedDatabasePath + suffix;
+                    if (File.Exists(stagedSidecar))
+                    {
+                        var targetSidecar = databasePath + suffix;
+                        File.Move(stagedSidecar, targetSidecar);
+                        installedFiles.Add(targetSidecar);
+                    }
+                }
+            }
+            catch (Exception restoreException)
+            {
+                try
+                {
+                    foreach (var installedFile in installedFiles)
+                    {
+                        File.Delete(installedFile);
+                    }
+
+                    foreach (var (originalPath, savedPath) in previousFiles.AsEnumerable().Reverse())
+                    {
+                        File.Move(savedPath, originalPath);
+                    }
+                }
+                catch (Exception rollbackException)
+                {
+                    preserveOperationDirectory = true;
+                    throw new AggregateException(
+                        $"Restoring the pre-migration snapshot failed, and automatic rollback was incomplete. The previous database files were retained at '{previousDirectory}'.",
+                        restoreException,
+                        rollbackException);
+                }
+
+                throw;
+            }
+
+            committed = true;
+            try
+            {
+                Directory.Delete(operationDirectory, recursive: true);
+                return null;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return $"The snapshot is active, but the prior database copy could not be removed from '{previousDirectory}': {exception.Message}";
+            }
+        }
+        finally
+        {
+            if (!committed && !preserveOperationDirectory && Directory.Exists(operationDirectory))
+            {
+                Directory.Delete(operationDirectory, recursive: true);
             }
         }
     }

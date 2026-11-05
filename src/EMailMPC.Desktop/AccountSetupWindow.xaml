@@ -8,8 +8,9 @@
         MinHeight="650"
         ResizeMode="CanResize"
         WindowStartupLocation="CenterOwner"
+        Loaded="Window_Loaded"
         Closing="Window_Closing">
-    <Grid Margin="12">
+    <Grid x:Name="AccountSetupSurface" Margin="{StaticResource SpacingGroup}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -18,13 +19,13 @@
 
         <StackPanel Margin="0,0,0,8">
             <TextBlock Text="Connect an email account"
-                       FontSize="14"
+                       FontSize="{StaticResource UiFontSizeBody}"
                        FontWeight="SemiBold"
                        Foreground="{StaticResource InkBrush}" />
             <TextBlock Margin="0,4,0,0"
                        Text="Uses IMAP over verified TLS. Enter a provider-issued app password; your normal account password is not recommended."
-                       FontSize="12"
-                       Foreground="#536270"
+                       FontSize="{StaticResource UiFontSizeSmall}"
+                       Foreground="{StaticResource MutedBrush}"
                        TextWrapping="Wrap" />
         </StackPanel>
 
@@ -75,6 +76,8 @@
                 <TextBox x:Name="ImapPortBox" Grid.Row="6" Grid.Column="1"
                          Margin="0,0,8,8" Padding="8" Text="993" />
                 <ComboBox x:Name="ImapSecurityBox" Grid.Row="6" Grid.Column="2" Margin="0,0,0,8"
+                          DropDownOpened="ImapSecurityBox_DropDownOpened"
+                          DropDownClosed="ImapSecurityBox_DropDownClosed"
                           AutomationProperties.Name="IMAP transport security">
                     <ComboBoxItem Content="SSL/TLS" Tag="SslOnConnect" IsSelected="True" />
                     <ComboBoxItem Content="STARTTLS" Tag="StartTls" />
@@ -91,6 +94,8 @@
                 <TextBox x:Name="SmtpPortBox" Grid.Row="9" Grid.Column="1"
                          Margin="0,0,8,8" Padding="8" Text="587" />
                 <ComboBox x:Name="SmtpSecurityBox" Grid.Row="9" Grid.Column="2" Margin="0,0,0,8"
+                          DropDownOpened="SmtpSecurityBox_DropDownOpened"
+                          DropDownClosed="SmtpSecurityBox_DropDownClosed"
                           AutomationProperties.Name="SMTP transport security">
                     <ComboBoxItem Content="STARTTLS" Tag="StartTls" IsSelected="True" />
                     <ComboBoxItem Content="SSL/TLS" Tag="SslOnConnect" />
@@ -98,8 +103,8 @@
 
                 <TextBlock Grid.Row="10" Grid.ColumnSpan="3" Margin="0,12,0,4"
                            Text="IMAP and SMTP use verified TLS. SMTP is used only when you choose Send email."
-                           FontSize="12"
-                           Foreground="#697783"
+                           FontSize="{StaticResource UiFontSizeSmall}"
+                           Foreground="{StaticResource MutedBrush}"
                            TextWrapping="Wrap" />
             </Grid>
         </ScrollViewer>
@@ -107,6 +112,7 @@
         <DockPanel Grid.Row="2" Margin="0,8,0,0">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Button x:Name="CancelButton" Margin="0,0,8,0"
+                        IsCancel="True"
                         Content="Cancel" Click="CancelButton_Click" />
                 <Button x:Name="ConnectButton"
                         Content="Verify and add" IsDefault="True" Click="ConnectButton_Click" />

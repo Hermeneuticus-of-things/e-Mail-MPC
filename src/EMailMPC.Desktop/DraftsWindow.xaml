@@ -8,7 +8,7 @@
         MinHeight="360"
         WindowStartupLocation="CenterOwner"
         Loaded="Window_Loaded">
-    <Grid Margin="12">
+    <Grid x:Name="DraftsSurface" Margin="{StaticResource SpacingGroup}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -16,12 +16,12 @@
         </Grid.RowDefinitions>
         <StackPanel Margin="0,0,0,8">
             <TextBlock Text="Saved drafts"
-                       FontSize="14"
+                       FontSize="{StaticResource UiFontSizeBody}"
                        FontWeight="SemiBold"
                        Foreground="{StaticResource InkBrush}" />
             <TextBlock x:Name="AccountText"
                        Margin="0,4,0,0"
-                       FontSize="12"
+                       FontSize="{StaticResource UiFontSizeSmall}"
                        Foreground="{StaticResource MutedBrush}" />
         </StackPanel>
 

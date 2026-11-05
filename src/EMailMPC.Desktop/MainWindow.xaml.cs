@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Diagnostics;
@@ -21,10 +21,34 @@ public partial class MainWindow : Window
     private int _accountCount;
     private long _previewRequestId;
     private MailMessageRecord? _selectedMessage;
+    private readonly WindowFocusCoordinator _focusCoordinator;
+    private IDisposable? _accountDropdownFocus;
+    private IDisposable? _sortDropdownFocus;
 
     public MainWindow()
     {
         InitializeComponent();
+        _focusCoordinator = WindowFocusCoordinator.Attach(this, "main", new Dictionary<string, Func<object?, bool>>
+        {
+            ["mail.find"] = _ => FocusSearch(),
+            ["mail.compose"] = _ =>
+            {
+                ComposeButton_Click(this, new RoutedEventArgs());
+                return true;
+            },
+            ["mail.sync"] = _ =>
+            {
+                SyncButton_Click(this, new RoutedEventArgs());
+                return true;
+            }
+        });
+        _focusCoordinator.RegisterSurface("menu.main", ApplicationMenu, ApplicationMenu);
+        _focusCoordinator.RegisterSurface("search.controls", SearchControlsSurface, SearchBox);
+        _focusCoordinator.RegisterSurface("search.query-plan", QueryPlanPanel, QueryPlanBox);
+        _focusCoordinator.RegisterSurface("panel.folders", FoldersSurface, FolderListBox);
+        _focusCoordinator.RegisterSurface("mail.results", ResultsGrid, ResultsGrid);
+        _focusCoordinator.RegisterSurface("mail.reader", ReaderSurface, MessageBodyText);
+        _focusCoordinator.RegisterSurface("mail.attachments", AttachmentsGrid, AttachmentsGrid);
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -34,28 +58,51 @@ public partial class MainWindow : Window
             return;
         }
 
-        switch (e.Key)
+        var commandId = e.Key switch
         {
-            case Key.F:
-                SearchBox.Focus();
-                SearchBox.SelectAll();
-                e.Handled = true;
-                break;
-            case Key.N:
-                ComposeButton_Click(sender, e);
-                e.Handled = true;
-                break;
-            case Key.R:
-                SyncButton_Click(sender, e);
-                e.Handled = true;
-                break;
-        }
+            Key.F => "mail.find",
+            Key.N => "mail.compose",
+            Key.R => "mail.sync",
+            _ => null
+        };
+        e.Handled = commandId is not null && _focusCoordinator.Dispatch(commandId);
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
         await LoadAccountsAsync();
         await RunSearchAsync();
+        _focusCoordinator.ActivateInitialSurface("mail.results");
+    }
+
+    private bool FocusSearch()
+    {
+        SearchBox.Focus();
+        SearchBox.SelectAll();
+        return true;
+    }
+
+    private bool? ShowOwnedDialog(Window dialog, string surfaceId)
+    {
+        dialog.Owner = this;
+        using (_focusCoordinator.PushModalSurface(surfaceId))
+        {
+            return dialog.ShowDialog();
+        }
+    }
+
+    private MessageBoxResult ShowMessageBox(
+        Window owner,
+        string message,
+        string caption,
+        MessageBoxButton buttons,
+        MessageBoxImage image,
+        MessageBoxResult defaultResult = MessageBoxResult.OK)
+    {
+        using (_focusCoordinator.PushModalSurface("dialog.message"))
+        {
+            return MessageBox.Show(owner, message, caption, buttons, image, defaultResult);
+        }
     }
 
     private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
@@ -75,9 +122,12 @@ public partial class MainWindow : Window
             OverwritePrompt = true,
             Title = "Back up encrypted local mail data"
         };
-        if (dialog.ShowDialog(this) != true)
+        using (_focusCoordinator.PushModalSurface("dialog.backup-save"))
         {
-            return;
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
         }
 
         SetBusy(true);
@@ -90,7 +140,7 @@ public partial class MainWindow : Window
                 application.AccountSecretsDirectory,
                 dialog.FileName);
             StatusText.Text = "Encrypted backup created. It can be restored only where this Windows user can decrypt its DPAPI-protected key.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 "The encrypted backup was created. Keep it private and retain access to the same Windows user profile; the database key and account credentials are protected with Windows DPAPI and are not portable to another user or device.",
                 "Backup complete",
@@ -100,7 +150,7 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             StatusText.Text = "Backup failed.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"The local backup could not be created.\n\n{exception.Message}",
                 "Backup error",
@@ -122,12 +172,15 @@ public partial class MainWindow : Window
             Multiselect = false,
             Title = "Choose an encrypted local backup"
         };
-        if (dialog.ShowDialog(this) != true)
+        using (_focusCoordinator.PushModalSurface("dialog.backup-restore"))
         {
-            return;
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
         }
 
-        var confirmation = MessageBox.Show(
+        var confirmation = ShowMessageBox(
             this,
             "Restoring replaces the current local mail database, protected account credentials, and drafts with the selected backup. The app will close afterward. Continue only if this is the backup you intend to restore.",
             "Replace local mail data?",
@@ -146,7 +199,7 @@ public partial class MainWindow : Window
         try
         {
             var cleanupWarning = await new LocalMailBackupService().RestoreAsync(dialog.FileName, application.DataDirectory);
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 cleanupWarning is null
                     ? "The backup was restored. eMail MPC will close; start it again to open the restored mail data."
@@ -159,10 +212,72 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             StatusText.Text = "Restore failed; the existing data was preserved when restoration had not committed.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"The backup could not be restored.\n\n{exception.Message}\n\nThe application will close. Start it again to reopen the current local data.",
                 "Restore error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Application.Current.Shutdown(1);
+        }
+    }
+
+    private async void RestoreMigrationSnapshotMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var application = (App)Application.Current;
+        var dialog = new OpenFileDialog
+        {
+            CheckFileExists = true,
+            InitialDirectory = application.DataDirectory,
+            Filter = "eMail MPC pre-migration snapshot (mail.db.pre-migration-*.db)|mail.db.pre-migration-*.db",
+            Multiselect = false,
+            Title = "Choose a pre-migration database snapshot"
+        };
+        using (_focusCoordinator.PushModalSurface("dialog.migration-snapshot-restore"))
+        {
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
+        }
+
+        var confirmation = ShowMessageBox(
+            this,
+            "Restoring replaces the current local mail database with the selected pre-migration snapshot after validating and migrating a staged copy. The database key and account credentials are preserved. eMail MPC will close afterward; start it again to open the restored data. Continue only if this is the snapshot you intend to restore.",
+            "Restore pre-migration snapshot?",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        SetBusy(true);
+        StatusText.Text = "Validating and restoring the pre-migration snapshot...";
+        application.MailDatabase!.Dispose();
+        try
+        {
+            var cleanupWarning = await new LocalMailBackupService().RestoreMigrationSnapshotAsync(
+                dialog.FileName,
+                application.DataDirectory);
+            ShowMessageBox(
+                this,
+                cleanupWarning is null
+                    ? "The pre-migration snapshot was restored. eMail MPC will close; start it again to open the restored mail data."
+                    : $"The snapshot was restored, but the prior database copy could not be removed.\n\n{cleanupWarning}\n\neMail MPC will close; start it again to open the restored mail data.",
+                "Snapshot restore complete",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            Application.Current.Shutdown();
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text = "Snapshot restore failed.";
+            ShowMessageBox(
+                this,
+                $"The pre-migration snapshot could not be restored.\n\n{exception.Message}\n\nThe application will close. Start it again to reopen the current local data.",
+                "Snapshot restore error",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             Application.Current.Shutdown(1);
@@ -208,7 +323,7 @@ public partial class MainWindow : Window
     private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
     {
         var version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "development";
-        MessageBox.Show(
+        ShowMessageBox(
             this,
             $"eMail MPC {version}\n\nWindows desktop preview. Mail is stored in an encrypted local database. This build supports IMAP/SMTP with provider-issued app passwords; OAuth and cross-device data portability are not yet available.",
             "About eMail MPC",
@@ -229,7 +344,7 @@ public partial class MainWindow : Window
             if (!VerifiedUpdateService.IsUpdateAvailable(currentVersion, manifest.Version))
             {
                 StatusText.Text = $"eMail MPC {currentVersion} is up to date.";
-                MessageBox.Show(
+                ShowMessageBox(
                     this,
                     $"This installation is version {currentVersion}. The latest stable release is {manifest.Version}.",
                     "No update available",
@@ -241,7 +356,7 @@ public partial class MainWindow : Window
             var isPortable = File.Exists(Path.Combine(AppContext.BaseDirectory, "portable.mode"));
             var packageDescription = isPortable ? "portable ZIP" : "setup package";
             var packageSize = isPortable ? manifest.SizeBytes : manifest.InstallerSizeBytes;
-            var downloadChoice = MessageBox.Show(
+            var downloadChoice = ShowMessageBox(
                 this,
                 $"Version {manifest.Version} is available. Download and verify the official {packageDescription} ({packageSize:N0} bytes)?",
                 "Update available",
@@ -262,19 +377,40 @@ public partial class MainWindow : Window
             {
                 var archivePath = await updateService.DownloadAndVerifyPortableArchiveAsync(manifest, stagingDirectory);
                 StatusText.Text = $"Version {manifest.Version} portable archive downloaded and verified.";
-                MessageBox.Show(
+                var applyChoice = ShowMessageBox(
                     this,
-                    $"The portable archive passed its size and SHA-256 checks.\n\nSHA-256: {manifest.Sha256}\n\nTo update, close eMail MPC, keep a backup of the current application folder, and extract the archive over the existing program files. Preserve the existing data folder.",
-                    "Verified portable update staged",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-                StatusText.Text = $"Verified portable update is staged at {archivePath}.";
+                    $"The portable archive passed its size and SHA-256 checks.\n\nApply version {manifest.Version} now? eMail MPC will close while the update is applied. Your data folder will be preserved, and the previous program files will be restored automatically if the updated app fails its startup check.",
+                    "Apply verified portable update?",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question,
+                    MessageBoxResult.No);
+                if (applyChoice == MessageBoxResult.Yes)
+                {
+                    var updater = new ProcessStartInfo
+                    {
+                        FileName = Path.Combine(AppContext.BaseDirectory, "EMailMPC.Desktop.exe"),
+                        UseShellExecute = false
+                    };
+                    updater.ArgumentList.Add("--apply-portable-update");
+                    updater.ArgumentList.Add(archivePath);
+                    updater.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    updater.ArgumentList.Add(manifest.Sha256);
+                    updater.ArgumentList.Add(manifest.SizeBytes.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    _ = Process.Start(updater)
+                        ?? throw new InvalidOperationException("The portable update helper could not be started.");
+                    StatusText.Text = $"Applying version {manifest.Version}.";
+                    Application.Current.Shutdown();
+                }
+                else
+                {
+                    StatusText.Text = $"Verified portable update is staged at {archivePath}.";
+                }
             }
             else
             {
                 var installerPath = await updateService.DownloadAndVerifyInstallerAsync(manifest, stagingDirectory);
                 StatusText.Text = $"Version {manifest.Version} setup package downloaded and verified.";
-                var installChoice = MessageBox.Show(
+                var installChoice = ShowMessageBox(
                     this,
                     $"The setup package passed its size and SHA-256 checks.\n\nSHA-256: {manifest.InstallerSha256}\n\nRun the official setup wizard now? Your local mail data is stored separately from the program files.",
                     "Verified update ready",
@@ -299,7 +435,7 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             StatusText.Text = "Update check or verification failed.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"An update could not be checked or verified. The setup package was not started.\n\n{exception.Message}",
                 "Update check failed",
@@ -315,6 +451,36 @@ public partial class MainWindow : Window
     private async void SearchButton_Click(object sender, RoutedEventArgs e)
     {
         await RunSearchAsync();
+    }
+
+    private void AccountCombo_DropDownOpened(object sender, EventArgs e)
+    {
+        _accountDropdownFocus?.Dispose();
+        _accountDropdownFocus = _focusCoordinator.PushTransientSurface(
+            "dropdown.account-filter",
+            "search.controls",
+            "AccountCombo");
+    }
+
+    private void AccountCombo_DropDownClosed(object sender, EventArgs e)
+    {
+        _accountDropdownFocus?.Dispose();
+        _accountDropdownFocus = null;
+    }
+
+    private void SortCombo_DropDownOpened(object sender, EventArgs e)
+    {
+        _sortDropdownFocus?.Dispose();
+        _sortDropdownFocus = _focusCoordinator.PushTransientSurface(
+            "dropdown.search-sort",
+            "search.controls",
+            "SortCombo");
+    }
+
+    private void SortCombo_DropDownClosed(object sender, EventArgs e)
+    {
+        _sortDropdownFocus?.Dispose();
+        _sortDropdownFocus = null;
     }
 
     private async void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -334,11 +500,8 @@ public partial class MainWindow : Window
         {
             var application = (App)Application.Current;
             StatusText.Text = "Opening account setup...";
-            var dialog = new AccountSetupWindow(application.MailDatabase!, application.SecretStore!)
-            {
-                Owner = this
-            };
-            if (dialog.ShowDialog() == true)
+            var dialog = new AccountSetupWindow(application.MailDatabase!, application.SecretStore!);
+            if (ShowOwnedDialog(dialog, "dialog.account-setup") == true)
             {
                 await LoadAccountsAsync();
                 StatusText.Text = "Account added. Mail is not synchronized until you choose Sync mail.";
@@ -351,7 +514,7 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             StatusText.Text = "Account setup could not be opened.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"The account setup window could not be opened.\n\n{exception.Message}",
                 "Account setup error",
@@ -368,7 +531,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var choice = MessageBox.Show(
+        var choice = ShowMessageBox(
             this,
             $"Remove {selected.Account.EmailAddress} and its saved sign-in secret?\n\nDownloaded messages, attachments, and drafts stay on this device but are no longer linked to the account. No mail on the server is deleted.",
             "Remove email account",
@@ -389,7 +552,7 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             StatusText.Text = "The account could not be removed.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"The account could not be removed. Existing local mail was not intentionally deleted.\n\n{exception.Message}",
                 "Account removal failed",
@@ -421,7 +584,7 @@ public partial class MainWindow : Window
         }
 
         StatusText.Text = "Account removed, but its saved sign-in secret could not be deleted.";
-        MessageBox.Show(
+        ShowMessageBox(
             this,
             $"The account was removed and its local mail was kept, but the saved sign-in secret could not be deleted. Close the app and remove the secret file manually if the problem persists.\n\n{secretCleanupError.Message}",
             "Sign-in secret cleanup failed",
@@ -458,7 +621,7 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             StatusText.Text = "Mail synchronization failed.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"Mail could not be synchronized. No messages on the server were changed.\n\n{exception.Message}",
                 "Synchronization failed",
@@ -490,11 +653,8 @@ public partial class MainWindow : Window
             var dialog = new ComposeWindow(
                 selected.Account,
                 application.SecretStore!,
-                application.MailDatabase!)
-            {
-                Owner = this
-            };
-            _ = dialog.ShowDialog();
+                application.MailDatabase!);
+            _ = ShowOwnedDialog(dialog, "dialog.compose");
             if (dialog.WasSent)
             {
                 StatusText.Text = $"Message accepted by SMTP for {selected.Account.EmailAddress}. Check Sent for the provider's saved copy.";
@@ -511,7 +671,7 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             StatusText.Text = "The compose window could not be opened.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"The compose window could not be opened.\n\n{exception.Message}",
                 "Compose error",
@@ -520,7 +680,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void DraftsButton_Click(object sender, RoutedEventArgs e)
+    private async void DraftsButton_Click(object sender, RoutedEventArgs e)
     {
         if (AccountCombo.SelectedItem is not AccountFilterItem { Account: not null } selected)
         {
@@ -529,26 +689,22 @@ public partial class MainWindow : Window
         }
 
         var application = (App)Application.Current;
-        var draftsWindow = new DraftsWindow(application.MailDatabase!, selected.Account)
-        {
-            Owner = this
-        };
-        if (draftsWindow.ShowDialog() != true || draftsWindow.SelectedDraft is not { } draft)
+        var draftsWindow = new DraftsWindow(application.MailDatabase!, selected.Account);
+        if (ShowOwnedDialog(draftsWindow, "dialog.drafts") != true || draftsWindow.SelectedDraft is not { } draft)
         {
             return;
         }
 
         try
         {
+            var draftAttachments = await application.MailDatabase!.GetDraftAttachmentsAsync(draft.Id);
             var composeWindow = new ComposeWindow(
                 selected.Account,
                 application.SecretStore!,
                 application.MailDatabase!,
-                draft)
-            {
-                Owner = this
-            };
-            _ = composeWindow.ShowDialog();
+                draft,
+                draftAttachments: draftAttachments);
+            _ = ShowOwnedDialog(composeWindow, "dialog.compose");
             StatusText.Text = composeWindow.WasSent
                 ? $"Message accepted by SMTP for {selected.Account.EmailAddress}. Check Sent for the provider's saved copy."
                 : composeWindow.WasDraftSaved
@@ -558,7 +714,7 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             StatusText.Text = "Draft could not be opened.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"The selected draft could not be opened.\n\n{exception.Message}",
                 "Draft error",
@@ -573,6 +729,7 @@ public partial class MainWindow : Window
         if (ResultsGrid.SelectedItem is not MailSearchResult selected)
         {
             _selectedMessage = null;
+            SetResponseButtonsEnabled(false);
             MessageSubjectText.Text = "Select a message to read";
             MessageMetadataText.Text = string.Empty;
             MessageBodyText.Clear();
@@ -581,6 +738,7 @@ public partial class MainWindow : Window
         }
 
         _selectedMessage = null;
+        SetResponseButtonsEnabled(false);
         MessageSubjectText.Text = selected.Subject;
         MessageMetadataText.Text = $"Loading message from {selected.Sender}...";
         MessageBodyText.Clear();
@@ -605,6 +763,7 @@ public partial class MainWindow : Window
                 $"From: {message.Sender}  ·  To: {message.Recipients}  ·  {message.ReceivedAtUtc.ToLocalTime():g}  ·  {message.Folder}";
             MessageBodyText.Text = message.BodyText;
             _selectedMessage = message;
+            SetResponseButtonsEnabled(true);
             await RefreshAttachmentItemsAsync(message.Id, requestId);
         }
         catch (Exception exception)
@@ -614,11 +773,69 @@ public partial class MainWindow : Window
                 return;
             }
 
+            SetResponseButtonsEnabled(false);
             MessageMetadataText.Text = "Could not load this message.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"The selected local message could not be loaded.\n\n{exception.Message}",
                 "Message read failed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private async void ReplyButton_Click(object sender, RoutedEventArgs e) =>
+        await OpenResponseAsync((message, _) => MessageResponseComposer.Reply(message));
+
+    private async void ReplyAllButton_Click(object sender, RoutedEventArgs e) =>
+        await OpenResponseAsync((message, account) =>
+            MessageResponseComposer.ReplyAll(message, account.EmailAddress));
+
+    private async void ForwardButton_Click(object sender, RoutedEventArgs e) =>
+        await OpenResponseAsync((message, _) => MessageResponseComposer.Forward(message));
+
+    private void SetResponseButtonsEnabled(bool enabled)
+    {
+        ReplyButton.IsEnabled = enabled;
+        ReplyAllButton.IsEnabled = enabled;
+        ForwardButton.IsEnabled = enabled;
+    }
+
+    private async Task OpenResponseAsync(
+        Func<MailMessageRecord, MailAccountRecord, MessageResponseDraft> createResponse)
+    {
+        if (_selectedMessage is not { } message)
+        {
+            StatusText.Text = "Select a message before replying or forwarding.";
+            return;
+        }
+
+        try
+        {
+            var application = (App)Application.Current;
+            var accounts = await application.MailDatabase!.ListAccountsAsync();
+            var account = accounts.SingleOrDefault(candidate =>
+                string.Equals(candidate.Id, message.AccountId, StringComparison.Ordinal))
+                ?? throw new InvalidOperationException("The account for this message is no longer configured.");
+            var composeWindow = new ComposeWindow(
+                account,
+                application.SecretStore!,
+                application.MailDatabase!,
+                response: createResponse(message, account));
+            _ = ShowOwnedDialog(composeWindow, "dialog.compose-response");
+            StatusText.Text = composeWindow.WasSent
+                ? $"Message accepted by SMTP for {account.EmailAddress}. Check Sent for the provider's saved copy."
+                : composeWindow.WasDraftSaved
+                    ? "Response saved locally in the encrypted store."
+                    : "Message response canceled.";
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text = "The message response could not be opened.";
+            ShowMessageBox(
+                this,
+                $"The response window could not be opened.\n\n{exception.Message}",
+                "Message response error",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
@@ -641,9 +858,12 @@ public partial class MainWindow : Window
             OverwritePrompt = true,
             Title = "Save email attachment"
         };
-        if (dialog.ShowDialog(this) != true)
+        using (_focusCoordinator.PushModalSurface("dialog.attachment-save"))
         {
-            return;
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
         }
 
         var application = (App)Application.Current;
@@ -696,7 +916,7 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             StatusText.Text = "Attachment could not be saved.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"The attachment could not be saved. It was not opened automatically.\n\n{exception.Message}",
                 "Attachment save failed",
@@ -833,7 +1053,7 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             AccountCountText.Text = "Could not load accounts";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"Saved accounts could not be loaded.\n\n{exception.Message}",
                 "Account loading failed",
@@ -853,12 +1073,16 @@ public partial class MainWindow : Window
         _isLoadingFolders = true;
         try
         {
-            var items = new List<FolderFilterItem> { new("All mail", null) };
+            var items = new List<FolderFilterItem>
+            {
+                new("All mail", null, null),
+                new("Sent — on this device", "Sent (local)", null)
+            };
             if (AccountCombo.SelectedItem is AccountFilterItem { Account: not null } selected)
             {
                 var application = (App)Application.Current;
                 var folders = await application.MailDatabase!.ListFoldersAsync(selected.Account.Id);
-                items.AddRange(folders.Select(folder => new FolderFilterItem(folder.FullName, folder)));
+                items.AddRange(folders.Select(folder => new FolderFilterItem(folder.FullName, folder.FullName, folder)));
             }
 
             FolderListBox.ItemsSource = items;
@@ -866,10 +1090,14 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
-            FolderListBox.ItemsSource = new[] { new FolderFilterItem("All mail", null) };
+            FolderListBox.ItemsSource = new[]
+            {
+                new FolderFilterItem("All mail", null, null),
+                new FolderFilterItem("Sent — on this device", "Sent (local)", null)
+            };
             FolderListBox.SelectedIndex = 0;
             StatusText.Text = "Mail folders could not be loaded.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"Saved mail folders could not be loaded.\n\n{exception.Message}",
                 "Folder loading failed",
@@ -911,7 +1139,7 @@ public partial class MainWindow : Window
             }
 
             var parsedQuery = MailQueryParser.Parse(effectiveText, accountId);
-            var folderFilter = (FolderListBox.SelectedItem as FolderFilterItem)?.Folder?.FullName;
+            var folderFilter = (FolderListBox.SelectedItem as FolderFilterItem)?.FolderName;
             if (parsedQuery.Criteria.Folder is null && folderFilter is not null)
             {
                 parsedQuery = parsedQuery with
@@ -948,7 +1176,7 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             StatusText.Text = "Search failed.";
-            MessageBox.Show(
+            ShowMessageBox(
                 this,
                 $"Local mail search failed.\n\n{exception.Message}",
                 "Search error",
@@ -969,6 +1197,7 @@ public partial class MainWindow : Window
         MenuAddAccountItem.IsEnabled = !isBusy;
         BackupDataMenuItem.IsEnabled = !isBusy;
         RestoreDataMenuItem.IsEnabled = !isBusy;
+        RestoreMigrationSnapshotMenuItem.IsEnabled = !isBusy;
         CheckForUpdatesMenuItem.IsEnabled = !isBusy;
         AccountCombo.IsEnabled = !isBusy;
         FolderListBox.IsEnabled = !isBusy;
@@ -1002,7 +1231,7 @@ public partial class MainWindow : Window
 
     private sealed record AccountFilterItem(string Label, MailAccountRecord? Account);
 
-    private sealed record FolderFilterItem(string Label, MailFolderRecord? Folder);
+    private sealed record FolderFilterItem(string Label, string? FolderName, MailFolderRecord? Folder);
 
     private sealed record AttachmentListItem(MailAttachmentRecord Attachment)
     {

@@ -5,3 +5,6 @@
 *.user
 *.suo
 .hallmark/salt
+.agents/
+.unlazy/
+analysis/

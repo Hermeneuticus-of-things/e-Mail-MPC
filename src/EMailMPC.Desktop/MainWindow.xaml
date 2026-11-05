@@ -9,7 +9,7 @@
         WindowStartupLocation="CenterScreen"
         Loaded="Window_Loaded"
         PreviewKeyDown="Window_PreviewKeyDown">
-    <Grid Margin="12,8">
+    <Grid Margin="{StaticResource PageInset}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -18,7 +18,8 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Menu Grid.Row="0"
+        <Menu x:Name="ApplicationMenu"
+              Grid.Row="0"
               Margin="0,0,0,4"
               Background="{StaticResource PaperBrush}"
               Foreground="{StaticResource InkBrush}"
@@ -42,6 +43,9 @@
                 <MenuItem x:Name="RestoreDataMenuItem"
                           Header="_Restore local data..."
                           Click="RestoreDataMenuItem_Click" />
+                <MenuItem x:Name="RestoreMigrationSnapshotMenuItem"
+                          Header="Restore _pre-migration snapshot..."
+                          Click="RestoreMigrationSnapshotMenuItem_Click" />
                 <Separator />
                 <MenuItem Header="E_xit"
                           Click="ExitMenuItem_Click" />
@@ -96,7 +100,9 @@
             </MenuItem>
         </Menu>
 
-        <Grid Grid.Row="1" Margin="0,0,0,8">
+        <Grid x:Name="SearchControlsSurface"
+              Grid.Row="1"
+              Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
@@ -109,6 +115,8 @@
                       VerticalContentAlignment="Center"
                       DisplayMemberPath="Label"
                       AutomationProperties.Name="Filter by email account"
+                      DropDownOpened="AccountCombo_DropDownOpened"
+                      DropDownClosed="AccountCombo_DropDownClosed"
                       SelectionChanged="AccountCombo_SelectionChanged" />
             <TextBox x:Name="SearchBox"
                      Grid.Column="1"
@@ -122,6 +130,8 @@
                       Margin="8,0,0,0"
                       MinWidth="116"
                       VerticalContentAlignment="Center"
+                      DropDownOpened="SortCombo_DropDownOpened"
+                      DropDownClosed="SortCombo_DropDownClosed"
                       SelectionChanged="SortCombo_SelectionChanged"
                       AutomationProperties.Name="Search result sort order">
                 <ComboBoxItem Content="Newest first" IsSelected="True" />
@@ -142,7 +152,7 @@
             <TextBlock DockPanel.Dock="Left"
                        Margin="0,0,8,0"
                        VerticalAlignment="Center"
-                       FontSize="13"
+                       FontSize="{StaticResource UiFontSizeMedium}"
                        Foreground="{StaticResource MutedBrush}"
                        Text="Search plan" />
             <TextBox x:Name="QueryPlanBox"
@@ -160,10 +170,12 @@
                 <ColumnDefinition x:Name="ReaderColumn" Width="1.15*" />
             </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Column="0" Margin="0,0,8,0">
+            <StackPanel x:Name="FoldersSurface"
+                        Grid.Column="0"
+                        Margin="0,0,8,0">
                 <TextBlock Margin="8,4,0,8"
                            Text="Mail folders"
-                           FontSize="12"
+                           FontSize="{StaticResource UiFontSizeSmall}"
                            FontWeight="SemiBold" />
                 <ListBox x:Name="FolderListBox"
                          DisplayMemberPath="Label"
@@ -206,7 +218,8 @@
                           ResizeBehavior="PreviousAndNext"
                           AutomationProperties.Name="Resize message list and reader" />
 
-            <Border Grid.Column="3"
+            <Border x:Name="ReaderSurface"
+                    Grid.Column="3"
                     Margin="8,0,0,0"
                     Padding="12,8"
                     Background="{StaticResource PaperBrush}"
@@ -216,33 +229,50 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                         <RowDefinition Height="120" />
                     </Grid.RowDefinitions>
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                        <Button x:Name="ReplyButton"
+                                Content="Reply"
+                                IsEnabled="False"
+                                Click="ReplyButton_Click" />
+                        <Button x:Name="ReplyAllButton"
+                                Margin="4,0,0,0"
+                                Content="Reply all"
+                                IsEnabled="False"
+                                Click="ReplyAllButton_Click" />
+                        <Button x:Name="ForwardButton"
+                                Margin="4,0,0,0"
+                                Content="Forward"
+                                IsEnabled="False"
+                                Click="ForwardButton_Click" />
+                    </StackPanel>
                     <TextBlock x:Name="MessageSubjectText"
-                               FontSize="14"
+                               Grid.Row="1"
+                               FontSize="{StaticResource UiFontSizeBody}"
                                FontWeight="SemiBold"
                                Text="Select a message to read"
                                TextTrimming="CharacterEllipsis" />
                     <TextBlock x:Name="MessageMetadataText"
-                               Grid.Row="1"
+                               Grid.Row="2"
                                Margin="0,4,0,8"
-                               FontSize="12"
+                               FontSize="{StaticResource UiFontSizeSmall}"
                                Foreground="{StaticResource MutedBrush}"
                                TextWrapping="Wrap"
                                TextTrimming="CharacterEllipsis" />
                     <TextBox x:Name="MessageBodyText"
-                             Grid.Row="2"
+                             Grid.Row="3"
                              IsReadOnly="True"
                              AcceptsReturn="True"
                              TextWrapping="Wrap"
                              VerticalScrollBarVisibility="Auto"
                              HorizontalScrollBarVisibility="Disabled"
-                             BorderThickness="0"
-                             Background="Transparent"
+                             Style="{StaticResource ReaderTextBoxStyle}"
                              AutomationProperties.Name="Selected message body" />
                     <DataGrid x:Name="AttachmentsGrid"
-                              Grid.Row="3"
+                              Grid.Row="4"
                               Margin="0,8,0,0"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
@@ -263,7 +293,7 @@
                                     <DataTemplate>
                                         <Button Content="{Binding ActionText}"
                                                 Tag="{Binding}"
-                                                Padding="4,2"
+                                                Padding="4,4"
                                                 Click="SaveAttachmentButton_Click"
                                                 IsEnabled="{Binding CanSave}" />
                                     </DataTemplate>
@@ -281,11 +311,11 @@
             <TextBlock x:Name="AccountCountText"
                        DockPanel.Dock="Right"
                        Margin="8,0,0,0"
-                       FontSize="12"
+                       FontSize="{StaticResource UiFontSizeSmall}"
                        Foreground="{StaticResource MutedBrush}"
                        Text="No accounts connected" />
             <TextBlock x:Name="StatusText"
-                       FontSize="12"
+                       FontSize="{StaticResource UiFontSizeSmall}"
                        Foreground="{StaticResource MutedBrush}"
                        Text="Local search is ready." />
         </DockPanel>
